@@ -37,9 +37,8 @@ yarn-error.log
 testem.log
 /typings
 
-# System files
-.DS_Store
-Thumbs.db
+# Environment files with API keys — never commit real keys
+src/environments/environment.prod.ts
 
 # Secrets
 .env
