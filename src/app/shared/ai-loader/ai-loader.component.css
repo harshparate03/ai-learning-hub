@@ -1,0 +1,58 @@
+/* ── CONTAINER ─────────────────────────────────────────── */
+.ai-loader-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  font-family: var(--font-body, 'Inter', sans-serif);
+}
+
+/* ── SVG ───────────────────────────────────────────────── */
+.ai-loading-svg {
+  width: 56px;
+  height: 56px;
+  display: block;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+/* ── TEXT ──────────────────────────────────────────────── */
+.ai-loading-text {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  background: linear-gradient(135deg, #818cf8, #a78bfa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: text-pulse 1.6s ease-in-out infinite alternate;
+}
+
+@keyframes text-pulse {
+  from { opacity: .45; }
+  to   { opacity: 1; }
+}
+
+/* ── SIZE VARIANTS ─────────────────────────────────────── */
+:host(.sm) .ai-loading-svg       { width: 28px; height: 28px; }
+:host(.sm) .ai-loading-text      { font-size: 10px; }
+:host(.sm) .ai-loader-container { gap: 8px; }
+
+:host(.lg) .ai-loading-svg       { width: 80px; height: 80px; }
+:host(.lg) .ai-loading-text      { font-size: 13px; }
+:host(.lg) .ai-loader-container  { gap: 20px; }
+
+:host(.inline) .ai-loader-container {
+  flex-direction: row;
+  gap: 8px;
+}
+:host(.inline) .ai-loading-svg   { width: 16px; height: 16px; }
+:host(.inline) .ai-loading-text {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .03em;
+  text-transform: none;
+}

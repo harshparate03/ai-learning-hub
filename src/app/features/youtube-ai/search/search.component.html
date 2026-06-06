@@ -1,0 +1,329 @@
+﻿<div class="yt-page" [class.yt-page--landing]="!selectedVideo && videos.length === 0">
+  <div class="container yt-page-inner">
+
+    <!-- LANDING: centered search -->
+    <ng-container *ngIf="!selectedVideo && videos.length === 0">
+      <div class="yt-landing">
+        <div class="yt-landing-header">
+          <h1 class="yt-title">YouTube AI Assistant</h1>
+          <p class="yt-subtitle">Search study topics or paste a video URL</p>
+        </div>
+
+        <div class="yt-landing-card">
+          <div class="search-tabs">
+            <button type="button" class="search-tab" [class.active]="activeTab==='search'" (click)="activeTab='search'; onQueryInput()">
+              <span class="search-tab-icon">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              </span>
+              <span class="search-tab-label">Search Videos</span>
+            </button>
+            <button type="button" class="search-tab" [class.active]="activeTab==='url'" (click)="activeTab='url'; showSuggestions=false">
+              <span class="search-tab-icon">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+              </span>
+              <span class="search-tab-label">Paste URL</span>
+            </button>
+          </div>
+
+          <div class="search-tab-panel">
+            <!-- Search tab -->
+            <div *ngIf="activeTab==='search'" class="search-input-wrap">
+              <label class="search-field-label">Search for educational videos</label>
+              <div class="input-group search-input-group">
+                <input type="text" class="form-control theme-input" [(ngModel)]="query"
+                  placeholder="e.g. data structures, machine learning, react..."
+                  (input)="onQueryInput()"
+                  (focus)="onQueryInput()"
+                  (blur)="hideSuggestions()"
+                  (keyup.enter)="search()" />
+                <button class="btn btn-theme fw-bold px-4" (click)="search()" [disabled]="loading">
+                  <app-ai-spark *ngIf="loading" [size]="18"></app-ai-spark>
+                  <span *ngIf="!loading">Search</span>
+                  <span *ngIf="loading">Searching...</span>
+                </button>
+              </div>
+              <div *ngIf="showSuggestions && suggestions.length" class="suggestions-dropdown">
+                <p class="suggestions-label">Suggested topics</p>
+                <button *ngFor="let s of suggestions" type="button" class="suggestion-item" (mousedown)="applySuggestion(s)">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  {{ s }}
+                </button>
+              </div>
+            </div>
+
+            <!-- URL tab -->
+            <div *ngIf="activeTab==='url'" class="search-input-wrap">
+              <label class="search-field-label">Paste a YouTube video link</label>
+              <div class="input-group search-input-group">
+                <input type="url" class="form-control theme-input" [(ngModel)]="urlInput"
+                  placeholder="https://youtube.com/watch?v=..."
+                  (keyup.enter)="loadFromUrl()" />
+                <button class="btn btn-theme fw-bold px-4" (click)="loadFromUrl()" [disabled]="loading">
+                  <app-ai-spark *ngIf="loading" [size]="18"></app-ai-spark>
+                  <span *ngIf="!loading">Load Video</span>
+                  <span *ngIf="loading">Loading...</span>
+                </button>
+              </div>
+              <p class="search-field-hint">Works with any public educational YouTube video</p>
+            </div>
+          </div>
+
+          <div *ngIf="errorMsg" class="alert alert-danger py-2 small mt-3 mb-0">{{ errorMsg }}</div>
+
+          <div *ngIf="activeTab==='search'" class="yt-feature-chips">
+            <span class="feature-chip">AI Summary</span>
+            <span class="feature-chip">Key Points</span>
+            <span class="feature-chip">Study Notes</span>
+            <span class="feature-chip">Quiz</span>
+          </div>
+        </div>
+      </div>
+    </ng-container>
+
+    <!-- RESULTS: compact search bar -->
+    <ng-container *ngIf="selectedVideo || videos.length > 0">
+      <div class="yt-header text-center mb-4">
+        <h1 class="yt-title">YouTube AI Assistant</h1>
+      </div>
+
+      <div *ngIf="!selectedVideo" class="yt-search-bar-wrap">
+        <div class="yt-search-bar-card">
+          <div class="search-tabs">
+            <button type="button" class="search-tab" [class.active]="activeTab==='search'" (click)="activeTab='search'; onQueryInput()">
+              <span class="search-tab-icon">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              </span>
+              <span class="search-tab-label">Search Videos</span>
+            </button>
+            <button type="button" class="search-tab" [class.active]="activeTab==='url'" (click)="activeTab='url'; showSuggestions=false">
+              <span class="search-tab-icon">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+              </span>
+              <span class="search-tab-label">Paste URL</span>
+            </button>
+          </div>
+
+          <div class="search-tab-panel">
+            <div *ngIf="activeTab==='search'" class="search-input-wrap">
+              <div class="input-group search-input-group">
+                <input type="text" class="form-control theme-input" [(ngModel)]="query"
+                  placeholder="Search study topics..."
+                  (input)="onQueryInput()" (focus)="onQueryInput()" (blur)="hideSuggestions()"
+                  (keyup.enter)="search()" />
+                <button class="btn btn-theme fw-bold px-4" (click)="search()" [disabled]="loading">
+                  <app-ai-spark *ngIf="loading" [size]="16"></app-ai-spark>
+                  <span *ngIf="!loading">Search</span>
+                </button>
+              </div>
+              <div *ngIf="showSuggestions && suggestions.length" class="suggestions-dropdown">
+                <p class="suggestions-label">Suggested topics</p>
+                <button *ngFor="let s of suggestions" type="button" class="suggestion-item" (mousedown)="applySuggestion(s)">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  {{ s }}
+                </button>
+              </div>
+            </div>
+
+            <div *ngIf="activeTab==='url'" class="search-input-wrap">
+              <div class="input-group search-input-group">
+                <input type="url" class="form-control theme-input" [(ngModel)]="urlInput"
+                  placeholder="https://youtube.com/watch?v=..."
+                  (keyup.enter)="loadFromUrl()" />
+                <button class="btn btn-theme fw-bold px-4" (click)="loadFromUrl()" [disabled]="loading">
+                  <app-ai-spark *ngIf="loading" [size]="16"></app-ai-spark>
+                  <span *ngIf="!loading">Load Video</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div *ngIf="errorMsg" class="alert alert-danger py-2 small mt-2 mb-0">{{ errorMsg }}</div>
+          <div *ngIf="searchInfo && !errorMsg" class="alert alert-info py-2 small mt-2 mb-0">{{ searchInfo }}</div>
+        </div>
+      </div>
+    </ng-container>
+
+    <!-- SEARCH RESULTS -->
+    <div *ngIf="videos.length > 0 && !selectedVideo">
+      <p class="theme-text-secondary small mb-3">{{ videos.length }} results for "{{ query }}"</p>
+      <div class="row gy-3 mb-4">
+        <div *ngFor="let video of videos" class="col-xl-3 col-lg-4 col-md-6">
+          <div class="video-card" (click)="selectVideo(video)">
+            <div class="video-thumb-wrapper">
+              <img [src]="getThumbnail(video)" class="video-thumb" alt="thumbnail" loading="lazy" />
+              <div class="play-overlay">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              </div>
+            </div>
+            <div class="video-info">
+              <p class="video-title">{{ video.snippet?.title }}</p>
+              <p class="video-channel">{{ video.snippet?.channelTitle }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIDEO + AI PANEL -->
+    <div *ngIf="selectedVideo" class="yt-workspace">
+
+      <div class="yt-left">
+        <button class="btn btn-outline-secondary btn-sm mb-3 w-100"
+          (click)="selectedVideo=null; videoDetails=null; clearAI(); errorMsg=''; urlInput=''">
+          {{ videos.length > 0 ? 'Back to Results' : 'Search Another Video' }}
+        </button>
+
+        <div *ngIf="contentWarning" class="content-warning mb-3">
+          <span class="content-warning-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          </span>
+          <div>
+            <strong>Not study-related content</strong>
+            <p class="mb-0 small">{{ contentWarning }}</p>
+          </div>
+        </div>
+
+        <div class="video-embed-wrapper mb-3">
+          <iframe [src]="'https://www.youtube.com/embed/' + getVideoId(selectedVideo) | safeUrl"
+            frameborder="0" allowfullscreen class="video-embed"></iframe>
+        </div>
+
+        <h6 class="theme-text fw-bold mb-1 lh-sm">{{ selectedVideo.snippet?.title }}</h6>
+        <p class="theme-text-secondary small mb-2">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px;opacity:.6;"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          {{ selectedVideo.snippet?.channelTitle }}
+        </p>
+
+        <div *ngIf="videoDetails" class="d-flex gap-2 flex-wrap mb-3">
+          <span class="badge bg-secondary">{{ yt.formatViews(videoDetails.statistics?.viewCount || '0') }} views</span>
+          <span class="badge bg-secondary">{{ yt.formatViews(videoDetails.statistics?.likeCount || '0') }} likes</span>
+          <span class="badge bg-secondary">{{ yt.formatDuration(videoDetails.contentDetails?.duration || '') }}</span>
+        </div>
+
+        <div class="ai-actions">
+          <p class="ai-actions-label">Generate AI Content</p>
+          <button class="ai-btn" [class.active]="activeAITab==='summary'" [disabled]="loadingAI || !isStudyRelated" (click)="generateAI('summary')">
+            <app-ai-spark *ngIf="loadingAI && activeAITab==='summary'" [size]="16"></app-ai-spark>
+            Summary
+          </button>
+          <button class="ai-btn" [class.active]="activeAITab==='keypoints'" [disabled]="loadingAI || !isStudyRelated" (click)="generateAI('keypoints')">
+            <app-ai-spark *ngIf="loadingAI && activeAITab==='keypoints'" [size]="16"></app-ai-spark>
+            Key Points
+          </button>
+          <button class="ai-btn" [class.active]="activeAITab==='notes'" [disabled]="loadingAI || !isStudyRelated" (click)="generateAI('notes')">
+            <app-ai-spark *ngIf="loadingAI && activeAITab==='notes'" [size]="16"></app-ai-spark>
+            Study Notes
+          </button>
+          <button *ngIf="isTechTopic && isStudyRelated" class="ai-btn ai-btn-visual" [class.active]="activeAITab==='visual'" [disabled]="loadingAI" (click)="generateAI('visual')">Code + Visuals</button>
+          <button class="ai-btn" [class.active]="activeAITab==='quiz'" [disabled]="loadingAI || !isStudyRelated" (click)="generateAI('quiz')">Quiz</button>
+          <button *ngIf="summaryBlocks.length || notesBlocks.length || visualBlocks.length || keyPoints.length || quiz.length"
+            class="ai-btn ai-btn-download" (click)="saveNotes()">Download</button>
+        </div>
+
+        <div *ngIf="errorMsg" class="alert alert-danger py-2 small mt-2">{{ errorMsg }}</div>
+      </div>
+
+      <div class="yt-right">
+        <div *ngIf="summaryBlocks.length || keyPoints.length || notesBlocks.length || visualBlocks.length || quiz.length" class="output-tabs mb-0">
+          <button *ngIf="summaryBlocks.length" class="output-tab" [class.active]="activeAITab==='summary'" (click)="activeAITab='summary'">Summary</button>
+          <button *ngIf="keyPoints.length" class="output-tab" [class.active]="activeAITab==='keypoints'" (click)="activeAITab='keypoints'">Key Points</button>
+          <button *ngIf="notesBlocks.length" class="output-tab" [class.active]="activeAITab==='notes'" (click)="activeAITab='notes'">Notes</button>
+          <button *ngIf="visualBlocks.length && isTechTopic" class="output-tab" [class.active]="activeAITab==='visual'" (click)="activeAITab='visual'">Code</button>
+          <button *ngIf="quiz.length" class="output-tab" [class.active]="activeAITab==='quiz'" (click)="activeAITab='quiz'">Quiz</button>
+        </div>
+
+        <div class="output-body">
+          <div *ngIf="loadingAI" class="output-loading">
+            <app-ai-spark [size]="56"></app-ai-spark>
+            <p class="fw-bold mt-3 mb-1">Generating...</p>
+          </div>
+
+          <div *ngIf="!loadingAI && !summaryBlocks.length && !keyPoints.length && !notesBlocks.length && !visualBlocks.length && !quiz.length" class="output-empty">
+            <app-ai-spark [size]="48"></app-ai-spark>
+            <p class="fw-bold mt-3 mb-1">AI Ready</p>
+            <p class="theme-text-secondary small" *ngIf="isStudyRelated">Select an option on the left to generate content</p>
+            <p class="theme-text-secondary small" *ngIf="!isStudyRelated">AI generation is disabled for non-educational videos.</p>
+          </div>
+
+          <div *ngIf="!loadingAI && summaryBlocks.length && activeAITab==='summary'">
+            <ng-container *ngFor="let block of summaryBlocks">
+              <ng-container *ngTemplateOutlet="blockTpl; context: { block: block }"></ng-container>
+            </ng-container>
+          </div>
+
+          <div *ngIf="!loadingAI && keyPoints.length && activeAITab==='keypoints'">
+            <div *ngFor="let kp of keyPoints; let i = index" class="kp-card mb-3">
+              <div class="kp-header">
+                <span class="kp-num">{{ i + 1 }}</span>
+                <span class="kp-title">{{ kp.title }}</span>
+              </div>
+              <p class="kp-detail">{{ kp.detail }}</p>
+            </div>
+          </div>
+
+          <div *ngIf="!loadingAI && notesBlocks.length && activeAITab==='notes'">
+            <ng-container *ngFor="let block of notesBlocks">
+              <ng-container *ngTemplateOutlet="blockTpl; context: { block: block }"></ng-container>
+            </ng-container>
+          </div>
+
+          <div *ngIf="!loadingAI && visualBlocks.length && activeAITab==='visual'">
+            <ng-container *ngFor="let block of visualBlocks; let bi = index">
+              <div *ngIf="block.type==='code'" class="code-block mb-4">
+                <div class="code-header">
+                  <span class="code-lang">{{ displayCodeLang(block.lang || '') }}</span>
+                  <button class="code-copy-btn" (click)="copyCode(block.content || '', bi)">{{ copiedIndex === bi ? 'Copied!' : 'Copy Code' }}</button>
+                </div>
+                <pre class="code-body"><code>{{ block.content }}</code></pre>
+              </div>
+              <div *ngIf="block.type==='visual'" class="visual-block mb-4">
+                <div class="visual-title">{{ block.content }}</div>
+                <pre class="visual-ascii">{{ block.steps?.join('\n') }}</pre>
+              </div>
+              <ng-container *ngIf="block.type !== 'code' && block.type !== 'visual' && block.type !== 'step-visual'">
+                <ng-container *ngTemplateOutlet="blockTpl; context: { block: block }"></ng-container>
+              </ng-container>
+            </ng-container>
+          </div>
+
+          <div *ngIf="!loadingAI && quiz.length && activeAITab==='quiz'">
+            <p class="theme-text-secondary small mb-3">{{ quiz.length }} questions</p>
+            <div *ngFor="let qa of quiz; let i = index" class="quiz-card mb-3">
+              <div class="quiz-q" (click)="toggleQuiz(i)">
+                <span class="quiz-num">Q{{ i + 1 }}</span>
+                <span class="quiz-text">{{ qa.q }}</span>
+              </div>
+              <div *ngIf="qa.open" class="quiz-a"><span class="quiz-a-label">Answer:</span> {{ qa.a }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<ng-template #blockTpl let-block="block">
+  <h5 *ngIf="block.type==='heading'" class="block-heading">{{ block.content }}</h5>
+  <h6 *ngIf="block.type==='subheading'" class="block-subheading">{{ block.content }}</h6>
+  <p *ngIf="block.type==='para'" class="block-para">{{ block.content }}</p>
+  <div *ngIf="block.type==='bullet'" class="block-bullet">
+    <span class="bullet-dot">&#9658;</span><span>{{ block.content }}</span>
+  </div>
+  <div *ngIf="block.type==='definition'" class="block-definition">
+    <span class="def-term">{{ block.term }}</span>
+    <span class="def-sep">&mdash;</span>
+    <span class="def-text">{{ block.def }}</span>
+  </div>
+  <hr *ngIf="block.type==='divider'" class="block-divider" />
+  <div *ngIf="block.type==='table'" class="block-table-wrap">
+    <table class="block-table">
+      <thead><tr><th *ngFor="let cell of block.rows![0]">{{ cell }}</th></tr></thead>
+      <tbody>
+        <tr *ngFor="let row of block.rows!.slice(1)">
+          <td *ngFor="let cell of row">{{ cell }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</ng-template>

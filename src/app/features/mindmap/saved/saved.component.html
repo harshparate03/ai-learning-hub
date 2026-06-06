@@ -1,0 +1,95 @@
+<div class="saved-page">
+  <div class="container">
+
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-start mb-5 flex-wrap gap-3">
+      <div>
+        <div class="section-label mb-1">
+          <span style="width:16px;height:1px;background:var(--grad-primary);display:inline-block;margin:auto 6px;"></span>
+          Mind Maps
+        </div>
+        <h1 class="page-title">Saved Mind Maps</h1>
+        <p class="theme-text-secondary small mb-0">
+          {{ savedMaps.length }} saved map{{ savedMaps.length !== 1 ? 's' : '' }}
+        </p>
+      </div>
+      <div class="d-flex gap-2 align-items-center flex-wrap">
+        <button *ngIf="savedMaps.length > 0" class="btn-delete-all" (click)="deleteAll()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+          Delete All
+        </button>
+        <a routerLink="/mindmap" class="btn btn-theme fw-bold px-4">+ New Mind Map</a>
+      </div>
+    </div>
+
+    <!-- Empty State -->
+    <div *ngIf="savedMaps.length === 0" class="empty-state">
+      <div class="empty-icon-wrap">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="12" cy="12" r="3"/><line x1="5" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="19" y2="12"/><line x1="12" y1="5" x2="12" y2="10"/><line x1="12" y1="14" x2="12" y2="19"/></svg>
+      </div>
+      <div class="empty-title">No Saved Mind Maps</div>
+      <p class="theme-text-secondary mb-4">Generate a mind map and save it to see it here.</p>
+      <a routerLink="/mindmap" class="btn btn-theme px-5">Generate Mind Map</a>
+    </div>
+
+    <!-- Maps Grid -->
+    <div class="row gy-4">
+      <div *ngFor="let map of savedMaps; let i = index" class="col-xl-4 col-lg-4 col-md-6">
+        <div class="map-card">
+
+          <!-- Delete Confirm Overlay -->
+          <div *ngIf="confirmDeleteIndex === i" class="delete-confirm">
+            <p class="delete-confirm-text">Delete<br>"{{ map.title }}"?</p>
+            <div class="d-flex gap-2">
+              <button class="btn btn-sm btn-danger" (click)="delete(i)">Yes, Delete</button>
+              <button class="btn btn-sm" style="border:1px solid var(--border-color);background:transparent;color:var(--text-secondary);"
+                (click)="cancelDelete()">Cancel</button>
+            </div>
+          </div>
+
+          <!-- Card Header -->
+          <div class="map-card-header">
+            <div class="d-flex justify-content-between align-items-start gap-2">
+              <h5 class="mb-0" title="{{ map.title }}">🧠 {{ map.title }}</h5>
+              <button class="btn btn-sm py-0 px-2 flex-shrink-0"
+                style="border:1px solid rgba(239,68,68,0.3);color:#f87171;background:transparent;border-radius:7px;font-size:11px;"
+                (click)="confirmDelete(i)">✕</button>
+            </div>
+            <div class="map-card-date">📅 {{ map.date }}</div>
+          </div>
+
+          <!-- Stats -->
+          <div class="map-card-body">
+            <div class="map-stats">
+              <span class="map-stat-chip map-stat-branches">{{ getBranchCount(map) }} branches</span>
+              <span class="map-stat-chip map-stat-nodes">{{ getNodeCount(map.data) }} nodes</span>
+            </div>
+
+            <div class="branches-label">Main Branches</div>
+            <div>
+              <span *ngFor="let branch of (map.data?.children || []).slice(0, 6)"
+                class="branch-tag"
+                [style.background]="branch.color + '18'"
+                [style.color]="branch.color"
+                [style.border-color]="branch.color + '55'">
+                {{ branch.label }}
+              </span>
+              <span *ngIf="(map.data?.children || []).length > 6"
+                class="branch-tag"
+                style="background:var(--bg-secondary);color:var(--text-muted);border-color:var(--border-color);">
+                +{{ map.data.children.length - 6 }} more
+              </span>
+            </div>
+          </div>
+
+          <!-- Action -->
+          <div class="map-card-footer">
+            <button class="btn-open-map" (click)="openMap(map)">📂 Open Mind Map</button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>

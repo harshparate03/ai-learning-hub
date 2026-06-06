@@ -1,0 +1,316 @@
+<div class="home-page">
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-bg">
+      <div class="hero-orb orb-1"></div>
+      <div class="hero-orb orb-2"></div>
+      <div class="hero-orb orb-3"></div>
+      <div class="hero-grid"></div>
+    </div>
+
+    <div class="container hero-inner">
+      <div class="row align-items-center gy-5">
+
+        <!-- Copy -->
+        <div class="col-lg-6">
+          <div class="hero-pill">
+            <span class="hero-pill-dot"></span>
+            AI-Powered Study Platform
+          </div>
+
+          <h1 class="hero-title">
+            Study Smarter.<br>
+            Learn <span class="gradient-text">Faster.</span><br>
+            Achieve More.
+          </h1>
+
+          <p class="hero-desc">
+            Transform any topic, video, or document into structured mind maps,
+            smart summaries, and quizzes — instantly, powered by advanced AI.
+          </p>
+
+          <div class="hero-cta btn-stack-mobile">
+            <a routerLink="/mindmap" class="btn-primary-lg">
+              <span class="btn-icon-wrap">
+                <app-logo [size]="16" variant="white"></app-logo>
+              </span>
+              Generate Mind Map
+              <svg class="btn-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </a>
+            <a routerLink="/youtube" class="btn-ghost-lg">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              YouTube AI
+            </a>
+          </div>
+        </div>
+
+        <!-- Visual card -->
+        <div class="col-lg-6">
+          <div class="hero-visual">
+
+            <div class="float-card float-card-status">
+              <div class="float-card-icon fc-green">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              </div>
+              <span class="status-ticker">
+                <span *ngFor="let msg of statusMessages; let i = index"
+                  class="status-ticker-text"
+                  [class.status-ticker-text--active]="statusIndex === i">{{ msg }}</span>
+              </span>
+            </div>
+
+            <div class="hero-card">
+              <div class="hero-card-header">
+                <div class="hc-dot hc-dot-red"></div>
+                <div class="hc-dot hc-dot-amber"></div>
+                <div class="hc-dot hc-dot-green"></div>
+                <span class="hc-brand">
+                  <span class="hc-logo-wrap">
+                    <app-logo [size]="14" variant="white"></app-logo>
+                  </span>
+                  AI Learning Hub
+                </span>
+              </div>
+
+              <div class="hero-card-body">
+                <div class="mock-features">
+                  <div *ngFor="let feat of featureNames; let i = index"
+                    class="mock-feature-item"
+                    [style.animation-delay.ms]="i * 100">
+                    <span class="mock-feature-dot"></span>
+                    {{ feat }}
+                  </div>
+                </div>
+
+                <div class="hero-tech-row">
+                  <span class="tech-pill" style="--pc:var(--indigo-400);">Fast Inference</span>
+                  <span class="tech-pill" style="--pc:var(--cyan-400);">Multimodal AI</span>
+                  <span class="tech-pill" style="--pc:var(--pink-400);">Video Analysis</span>
+                  <span class="tech-pill" style="--pc:var(--green-400);">Document AI</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <hr class="gradient-divider">
+
+  <!-- FEATURES -->
+  <section class="section-wrap features-section">
+    <div class="container">
+      <div class="section-head text-center">
+        <div class="overline">What You Get</div>
+        <h2 class="section-title">Everything You Need to<br><span class="gradient-text">Study Effectively</span></h2>
+        <p class="section-sub">Five powerful AI tools, one seamless platform.</p>
+      </div>
+
+      <div class="row gy-4">
+        <div class="col-lg-6">
+          <a routerLink="/mindmap" class="feat-card feat-card-lg">
+            <div class="feat-stripe" style="background:var(--grad-primary);"></div>
+            <div class="feat-icon-box" style="background:rgba(99,102,241,.12);color:var(--indigo-400);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><circle cx="3" cy="6" r="2"/><circle cx="21" cy="6" r="2"/><circle cx="3" cy="18" r="2"/><circle cx="21" cy="18" r="2"/><line x1="5" y1="6" x2="10" y2="11"/><line x1="19" y1="6" x2="14" y2="11"/><line x1="5" y1="18" x2="10" y2="13"/><line x1="19" y1="18" x2="14" y2="13"/></svg>
+            </div>
+            <div class="feat-tags">
+              <span class="feat-tag" style="color:var(--purple-400);">Text Input</span>
+              <span class="feat-tag" style="color:var(--cyan-400);">YouTube URL</span>
+              <span class="feat-tag" style="color:var(--pink-400);">File Upload</span>
+            </div>
+            <div class="feat-title">AI Mind Map Generator</div>
+            <p class="feat-desc">Enter any topic, paste a YouTube URL, or upload a file — the AI builds a fully structured, interactive mind map with definitions for every node.</p>
+            <div class="feat-link" style="color:var(--purple-400);">Start mapping <span class="feat-arrow">→</span></div>
+          </a>
+        </div>
+
+        <div class="col-lg-6">
+          <a routerLink="/youtube" class="feat-card feat-card-lg">
+            <div class="feat-stripe" style="background:var(--grad-secondary);"></div>
+            <div class="feat-icon-box" style="background:rgba(6,182,212,.1);color:var(--cyan-400);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </div>
+            <div class="feat-tags">
+              <span class="feat-tag" style="color:var(--cyan-400);">Summary</span>
+              <span class="feat-tag" style="color:var(--purple-400);">Key Points</span>
+              <span class="feat-tag" style="color:var(--green-400);">Study Notes</span>
+              <span class="feat-tag" style="color:var(--amber-400);">Quiz</span>
+            </div>
+            <div class="feat-title">YouTube AI Assistant</div>
+            <p class="feat-desc">Search or paste any educational video URL. Generate summaries, key points, study notes, code examples, and quizzes — all downloadable.</p>
+            <div class="feat-link" style="color:var(--cyan-400);">Try it now <span class="feat-arrow">→</span></div>
+          </a>
+        </div>
+
+        <div class="col-lg-4">
+          <a routerLink="/summarizer/upload" class="feat-card">
+            <div class="feat-stripe" style="background:var(--grad-accent);"></div>
+            <div class="feat-icon-box" style="background:rgba(168,85,247,.1);color:var(--purple-400);">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            </div>
+            <div class="feat-title">File Summarizer</div>
+            <p class="feat-desc">Upload PDF, DOCX, PPTX, or TXT. Get AI summaries, Q&A, and key insights extracted instantly.</p>
+            <div class="feat-link" style="color:var(--pink-400);">Upload a file <span class="feat-arrow">→</span></div>
+          </a>
+        </div>
+
+        <div class="col-lg-4">
+          <a routerLink="/summarizer/chat" class="feat-card">
+            <div class="feat-stripe" style="background:var(--grad-green);"></div>
+            <div class="feat-icon-box" style="background:rgba(16,185,129,.1);color:var(--green-400);">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </div>
+            <div class="feat-title">Chat with PDF</div>
+            <p class="feat-desc">Ask questions directly about your uploaded documents and get precise, context-aware answers.</p>
+            <div class="feat-link" style="color:var(--green-400);">Start chatting <span class="feat-arrow">→</span></div>
+          </a>
+        </div>
+
+        <div class="col-lg-4">
+          <a routerLink="/history" class="feat-card">
+            <div class="feat-stripe" style="background:var(--grad-orange);"></div>
+            <div class="feat-icon-box" style="background:rgba(245,158,11,.1);color:var(--amber-400);">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="12 8 12 12 14 14"/><path d="M3.05 11a9 9 0 1 0 .5-3H1"/><polyline points="1 4 1 8 5 8"/></svg>
+            </div>
+            <div class="feat-title">Study History</div>
+            <p class="feat-desc">Access your saved mind maps, summaries, and session history. Never lose your study progress.</p>
+            <div class="feat-link" style="color:var(--amber-400);">View history <span class="feat-arrow">→</span></div>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <hr class="gradient-divider">
+
+  <!-- HOW IT WORKS -->
+  <section class="section-wrap steps-section">
+    <div class="container">
+      <div class="section-head text-center">
+        <div class="overline">Simple Process</div>
+        <h2 class="section-title">From Input to <span class="gradient-text">Insights</span></h2>
+        <p class="section-sub">Four steps to transform any learning material into structured study content.</p>
+      </div>
+
+      <div class="steps-track">
+        <div class="step-item">
+          <div class="step-num">01</div>
+          <div class="step-icon-ring">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          </div>
+          <div class="step-title">Input Content</div>
+          <p class="step-desc">Type a topic, paste a YouTube URL, or upload a file (PDF, DOCX, PPTX, TXT, CSV)</p>
+        </div>
+
+        <div class="step-item">
+          <div class="step-num">02</div>
+          <div class="step-icon-ring" style="--ring-color:var(--purple-500);">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          </div>
+          <div class="step-title">AI Processes</div>
+          <p class="step-desc">Advanced AI models analyze the content and extract structured knowledge</p>
+        </div>
+
+        <div class="step-item">
+          <div class="step-num">03</div>
+          <div class="step-icon-ring" style="--ring-color:var(--cyan-500);">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 0 0 4.93 19.07"/><path d="M4.93 4.93A10 10 0 0 1 19.07 19.07"/></svg>
+          </div>
+          <div class="step-title">Choose Output</div>
+          <p class="step-desc">Get a mind map, summary, key points, notes, quiz, or code examples</p>
+        </div>
+
+        <div class="step-item step-item-highlight">
+          <div class="step-num step-num--green">04</div>
+          <div class="step-icon-ring" style="--ring-color:var(--green-400);">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          </div>
+          <div class="step-title">Save &amp; Export</div>
+          <p class="step-desc">Save mind maps, export notes as Markdown, download summaries and quizzes</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <hr class="gradient-divider">
+
+  <!-- AI STACK -->
+  <section class="section-wrap stack-section">
+    <div class="container">
+      <div class="section-head text-center">
+        <div class="overline">Why Choose Us</div>
+        <h2 class="section-title">Designed for <span class="gradient-text">Real Learning</span></h2>
+      </div>
+
+      <div class="row gy-3 justify-content-center">
+        <div class="col-lg-3 col-md-6">
+          <div class="stack-card">
+            <div class="stack-icon-ring" style="--rc:var(--indigo-500);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            </div>
+            <div class="stack-name">Instant Results</div>
+            <div class="stack-desc">Generate mind maps, summaries and quizzes in seconds — no waiting, no setup.</div>
+          </div>
+        </div>
+        <div class="col-lg-3 col-md-6">
+          <div class="stack-card">
+            <div class="stack-icon-ring" style="--rc:var(--cyan-500);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+            </div>
+            <div class="stack-name">Any Format</div>
+            <div class="stack-desc">Works with text, YouTube videos, PDFs, DOCX, PPTX, CSV — all in one place.</div>
+          </div>
+        </div>
+        <div class="col-lg-3 col-md-6">
+          <div class="stack-card">
+            <div class="stack-icon-ring" style="--rc:var(--pink-400);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </div>
+            <div class="stack-name">Interactive Learning</div>
+            <div class="stack-desc">Click nodes, reveal quiz answers, explore branches — learning is active, not passive.</div>
+          </div>
+        </div>
+        <div class="col-lg-3 col-md-6">
+          <div class="stack-card">
+            <div class="stack-icon-ring" style="--rc:var(--amber-400);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </div>
+            <div class="stack-name">Save and Export</div>
+            <div class="stack-desc">Download notes as Markdown, save mind maps locally, revisit your entire study history.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <hr class="gradient-divider">
+
+  <!-- CTA -->
+  <section class="cta-section">
+    <div class="cta-orb"></div>
+    <div class="container cta-inner">
+      <!-- <div class="cta-badge">Free · No account required to start</div> -->
+      <h2 class="cta-title">
+        Ready to Transform<br>
+        <span class="gradient-text">the Way You Learn?</span>
+      </h2>
+      <p class="cta-sub">Start with a mind map, explore a video, or upload your study material. Instant results.</p>
+      <div class="cta-actions btn-stack-mobile">
+        <a routerLink="/mindmap" class="btn-primary-lg btn-with-logo">
+          <span class="btn-logo-wrap">
+            <app-logo [size]="16" variant="white"></app-logo>
+          </span>
+          Build a Mind Map
+        </a>
+        <a routerLink="/summarizer/upload" class="btn-ghost-lg">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          Upload a Document
+        </a>
+      </div>
+    </div>
+  </section>
+
+</div>

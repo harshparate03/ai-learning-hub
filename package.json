@@ -4,9 +4,14 @@
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
-    "build": "ng build",
+    "build": "ng build --configuration production",
+    "build:dev": "ng build --configuration development",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "vercel-build": "node scripts/generate-env.js && ng build --configuration production"
+  },
+  "engines": {
+    "node": ">=18.19.0"
   },
   "private": true,
   "dependencies": {
@@ -18,6 +23,15 @@
     "@angular/platform-browser": "^18.2.0",
     "@angular/platform-browser-dynamic": "^18.2.0",
     "@angular/router": "^18.2.0",
+    "@swimlane/ngx-graph": "^12.0.0-alpha.0",
+    "bootstrap": "^5.3.8",
+    "d3": "^7.9.0",
+    "docx": "^9.6.1",
+    "jspdf": "^4.2.1",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.12.0",
+    "pdfjs-dist": "^5.6.205",
+    "pptxgenjs": "^4.0.1",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
     "zone.js": "~0.14.10"

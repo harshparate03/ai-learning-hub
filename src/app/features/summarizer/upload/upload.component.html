@@ -1,0 +1,240 @@
+<div class="notes-page" [class.notes-page--landing]="topics.length === 0 && !loading">
+  <div class="container notes-container">
+
+    <!-- Header -->
+    <div class="page-header text-center" [class.page-header--compact]="topics.length > 0">
+      <div class="section-label mx-auto mb-2" style="display:inline-flex;">
+        <span style="width:16px;height:1px;background:var(--grad-primary);display:inline-block;margin:auto 8px;"></span>
+        AI Study Tools
+        <span style="width:16px;height:1px;background:var(--grad-primary);display:inline-block;margin:auto 8px;"></span>
+      </div>
+      <h1 class="page-title">
+        <span class="gradient-span">AI Study Notes</span> Generator
+      </h1>
+      <p class="theme-text-secondary" style="font-size:15px;">Upload a file or paste text — get complete topic-wise study notes with subtopics, Q&A, and diagrams</p>
+    </div>
+
+    <div class="row justify-content-center">
+      <div class="col-lg-8 upload-center-col">
+
+        <!-- Mode tabs -->
+        <div class="mode-tabs mode-tabs-centered">
+          <button class="mode-tab" [class.active]="mode==='text'" (click)="switchMode('text')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="17" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="3" y2="14"/><line x1="17" y1="18" x2="3" y2="18"/></svg>
+            Text Input
+          </button>
+          <button class="mode-tab" [class.active]="mode==='file'" (click)="switchMode('file')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            Upload File
+          </button>
+        </div>
+
+        <!-- Input Card -->
+        <div class="input-card input-card-centered">
+
+          <!-- Text mode -->
+          <div *ngIf="mode==='text'" class="input-mode-content">
+            <div class="upload-empty-icon">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><line x1="17" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="3" y2="14"/><line x1="17" y1="18" x2="3" y2="18"/></svg>
+            </div>
+            <label class="input-label text-center d-block">Enter your text or topic</label>
+            <textarea class="form-control theme-input" rows="6" [(ngModel)]="inputText"
+              placeholder="Paste your notes, textbook content, or any topic here..."></textarea>
+          </div>
+
+          <!-- File mode -->
+          <div *ngIf="mode==='file'" class="input-mode-content">
+            <label class="input-label text-center d-block">Upload Study Material</label>
+            <div class="dropzone" (click)="fileInput.click()">
+              <div class="upload-empty-icon dropzone-icon">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+              </div>
+              <div class="dropzone-text">Click to choose a file</div>
+              <div class="dropzone-hint">PDF, TXT, DOCX, PPT, PPTX — any size</div>
+            </div>
+            <input #fileInput type="file" class="d-none"
+              (change)="onFileSelected($event)" accept=".pdf,.txt,.docx,.pptx,.ppt" />
+
+            <div *ngIf="fileName" class="d-flex gap-2 flex-wrap mt-2">
+              <span class="file-badge">{{ fileName }}</span>
+              <span *ngIf="pdfImages.length > 0" class="file-badge" style="background:rgba(52,211,153,0.1);border-color:rgba(52,211,153,0.3);color:var(--green-400);">
+                {{ pdfImages.length }} diagrams
+              </span>
+            </div>
+          </div>
+
+          <!-- Error -->
+          <div *ngIf="errorMsg" class="alert alert-danger py-2 small mt-3" style="border-radius:10px;font-size:13px;">
+            {{ errorMsg }}
+          </div>
+
+          <!-- Progress -->
+          <div *ngIf="progress" class="progress-wrap">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <app-ai-spark [size]="16" [spin]="true"></app-ai-spark>
+              <span class="progress-label">{{ progress }}</span>
+            </div>
+            <div class="progress-bar-custom">
+              <div class="progress-fill" style="width:100%"></div>
+            </div>
+          </div>
+
+          <!-- Generate button -->
+          <button class="btn btn-theme fw-bold w-100 mt-4" style="padding:13px;font-size:15px;"
+            (click)="generateAI()" [disabled]="!canGenerate || loading">
+            <app-ai-spark *ngIf="loading" [size]="18" [spin]="true" style="margin-right:8px;"></app-ai-spark>
+            {{ loading ? 'Generating Study Notes...' : 'Generate Complete Study Notes' }}
+          </button>
+        </div>
+
+        <!-- Output -->
+        <div *ngIf="topics.length > 0">
+
+          <!-- Download bar -->
+          <div *ngIf="!loading" class="download-bar">
+            <span class="download-label">Download Notes:</span>
+            <select class="form-select theme-input w-auto" [(ngModel)]="downloadFormat" style="min-width:120px;">
+              <option value="pdf">PDF</option>
+              <option value="docx">DOCX</option>
+              <option value="ppt">PPT</option>
+              <option value="txt">TXT</option>
+            </select>
+            <button class="btn btn-theme fw-bold px-4" (click)="download()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Download
+            </button>
+            <span class="download-stats">{{ topics.length }} topics · {{ questions.length }} Q&A</span>
+          </div>
+
+          <!-- Results header -->
+          <div class="results-header">
+            <span class="results-title">📚 Study Notes</span>
+            <div class="d-flex gap-2">
+              <span class="badge" style="background:rgba(99,102,241,0.15);color:var(--purple-400);border:1px solid rgba(99,102,241,0.25);font-size:11px;padding:4px 10px;border-radius:12px;">
+                {{ topics.length }} Topics
+              </span>
+              <span *ngIf="loading" class="badge" style="background:rgba(251,191,36,0.15);color:var(--amber-400);border:1px solid rgba(251,191,36,0.25);font-size:11px;padding:4px 10px;border-radius:12px;display:inline-flex;align-items:center;gap:5px;">
+                <app-ai-spark [size]="12" [spin]="true"></app-ai-spark> Generating...
+              </span>
+              <span *ngIf="!loading && questions.length > 0" class="badge" style="background:rgba(52,211,153,0.12);color:var(--green-400);border:1px solid rgba(52,211,153,0.25);font-size:11px;padding:4px 10px;border-radius:12px;">
+                ✓ {{ questions.length }} Q&A
+              </span>
+            </div>
+          </div>
+
+          <!-- Topic Cards -->
+          <div *ngFor="let topic of topics; let i = index" class="topic-card">
+            <div class="topic-header">
+              <span class="topic-num">{{ i + 1 }}</span>
+              <span class="topic-title" [innerHTML]="renderBold(topic.title)"></span>
+            </div>
+            <div class="topic-body">
+
+              <div *ngIf="topic.explanation" class="explanation-text mb-3"
+                [innerHTML]="renderBold(topic.explanation)"></div>
+
+              <!-- Subtopics -->
+              <div *ngFor="let sub of topic.subtopics" class="subtopic-card">
+                <div class="subtopic-header">
+                  <span class="subtopic-title">🔹 <span [innerHTML]="renderBold(sub.title)"></span></span>
+                </div>
+                <div class="subtopic-body">
+                  <div *ngIf="sub.explanation" class="explanation-text mb-2"
+                    [innerHTML]="renderBold(sub.explanation)"></div>
+                  <ul *ngIf="sub.bullets.length > 0" class="bullet-list">
+                    <li *ngFor="let b of sub.bullets" [innerHTML]="renderBold(b)"></li>
+                  </ul>
+                </div>
+              </div>
+
+              <!-- Key Points -->
+              <div *ngIf="topic.bullets.length > 0" class="mt-2">
+                <div class="key-points-label">📌 Key Points</div>
+                <ul class="bullet-list">
+                  <li *ngFor="let b of topic.bullets" [innerHTML]="renderBold(b)"></li>
+                </ul>
+              </div>
+
+              <!-- Code Blocks -->
+              <div *ngIf="topic.codes && topic.codes.length > 0">
+                <div *ngFor="let c of topic.codes; let ci = index" class="code-wrap">
+                  <div class="code-header">
+                    <span class="code-lang-label">{{ c.lang || 'code' }}</span>
+                    <button class="code-copy-btn" (click)="copyCode(c.code, i * 100 + ci)">
+                      {{ copiedIndex === i * 100 + ci ? '✓ Copied!' : '📋 Copy' }}
+                    </button>
+                  </div>
+                  <pre class="code-block"><code>{{ c.code }}</code></pre>
+                </div>
+              </div>
+
+              <!-- Diagram -->
+              <div *ngIf="topic.image && topic.image !== 'NONE' && topic.image.trim() !== ''" class="diagram-box">
+                <div class="diagram-label">📊 Diagram / Visual</div>
+                <p class="theme-text-secondary small mb-0 fst-italic">{{ topic.image }}</p>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- PDF Images Gallery -->
+          <div *ngIf="pdfImages.length > 0" class="mb-4">
+            <div class="gallery-title">
+              🖼️ Extracted Diagrams ({{ pdfImages.length }})
+              <span *ngIf="loading" class="badge ms-2" style="background:rgba(251,191,36,0.15);color:var(--amber-400);font-size:10px;">Extracting...</span>
+            </div>
+            <div class="row gy-3">
+              <div *ngFor="let img of pdfImages; let i = index" class="col-md-6">
+                <div class="gallery-card">
+                  <div class="gallery-card-label">Page {{ img.pageNum }} — Figure {{ i + 1 }}</div>
+                  <img [src]="img.dataUrl" class="img-fluid rounded"
+                    style="width:100%;max-height:340px;object-fit:contain;" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Q&A Section -->
+          <div class="mt-5">
+            <div class="results-header">
+              <span class="results-title">❓ Exam Q&A</span>
+              <span *ngIf="loading && questions.length === 0" class="badge" style="background:rgba(251,191,36,0.15);color:var(--amber-400);border:1px solid rgba(251,191,36,0.25);font-size:11px;padding:4px 10px;border-radius:12px;display:inline-flex;align-items:center;gap:5px;">
+                <app-ai-spark [size]="12" [spin]="true"></app-ai-spark> Generating...
+              </span>
+              <span *ngIf="questions.length > 0" class="badge" style="background:rgba(52,211,153,0.12);color:var(--green-400);border:1px solid rgba(52,211,153,0.25);font-size:11px;padding:4px 10px;border-radius:12px;">
+                {{ questions.length }} Questions
+              </span>
+            </div>
+
+            <div *ngIf="loading && questions.length === 0" class="qa-placeholder">
+              <app-ai-spark [size]="20" [spin]="true"></app-ai-spark>
+              <span>Exam questions will appear once topics are processed...</span>
+            </div>
+
+            <div *ngFor="let qa of questions; let i = index" class="qa-card">
+              <div class="qa-question">
+                <span class="qa-number">Q{{ i + 1 }}</span>
+                <p class="qa-q-text mb-0 flex-grow-1" [innerHTML]="renderBold(qa.q)"></p>
+              </div>
+              <div class="qa-answer">
+                <div *ngIf="qa.a" class="qa-intro" [innerHTML]="renderBold(qa.a)"></div>
+                <div *ngIf="qa.steps.length > 0">
+                  <div class="key-points-label mt-2 mb-2">📋 Detailed Explanation</div>
+                  <div *ngFor="let step of qa.steps; let si = index" class="qa-step">
+                    <span class="qa-step-num">{{ si + 1 }}</span>
+                    <div class="flex-grow-1" [innerHTML]="renderBold(step)"></div>
+                  </div>
+                </div>
+                <div *ngIf="qa.image && qa.image !== 'NONE' && qa.image.trim() !== ''" class="diagram-box">
+                  <div class="diagram-label">📊 Related Diagram</div>
+                  <p class="theme-text-secondary small fst-italic mb-0">{{ qa.image }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

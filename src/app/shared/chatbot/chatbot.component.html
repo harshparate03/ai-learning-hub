@@ -1,0 +1,95 @@
+<div class="chatbot-backdrop" *ngIf="open" (click)="close()"></div>
+
+<aside class="chatbot-panel" [class.chatbot-panel--open]="open" role="dialog" aria-label="AI Chatbot">
+  <header class="chatbot-header">
+    <div class="chatbot-header-info">
+      <span class="chatbot-logo-wrap">
+        <app-logo [size]="18" variant="white"></app-logo>
+      </span>
+      <div>
+        <h2 class="chatbot-title">AI Study Chat</h2>
+        <p class="chatbot-sub">Powered by Groq</p>
+      </div>
+    </div>
+    <div class="chatbot-header-actions">
+      <button type="button" class="chatbot-icon-btn" (click)="clearChat()" title="Clear chat">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+      </button>
+      <button type="button" class="chatbot-icon-btn" (click)="close()" title="Close">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="chatbot-messages">
+    <div *ngFor="let msg of messages" class="chat-msg"
+      [class.chat-msg--user]="msg.role === 'user'"
+      [class.chat-msg--assistant]="msg.role === 'assistant'">
+
+      <!-- User: plain text -->
+      <div *ngIf="msg.role === 'user'" class="chat-msg-bubble">{{ msg.content }}</div>
+
+      <!-- Assistant: structured blocks -->
+      <div *ngIf="msg.role === 'assistant'" class="chat-msg-bubble chat-msg-bubble--rich">
+        <ng-container *ngFor="let block of parseMessage(msg.content)">
+
+          <h4 *ngIf="block.type === 'heading'" class="chat-heading">{{ block.content }}</h4>
+          <h5 *ngIf="block.type === 'subheading'" class="chat-subheading">{{ block.content }}</h5>
+
+          <p *ngIf="block.type === 'para'" class="chat-para">{{ block.content }}</p>
+
+          <ul *ngIf="block.type === 'list'" class="chat-list">
+            <li *ngFor="let item of block.items">{{ item }}</li>
+          </ul>
+
+          <div *ngIf="block.type === 'table'" class="chat-table-wrap">
+            <table class="chat-table">
+              <thead>
+                <tr><th *ngFor="let cell of block.rows![0]">{{ cell }}</th></tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let row of block.rows!.slice(1)">
+                  <td *ngFor="let cell of row">{{ cell }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <pre *ngIf="block.type === 'code'" class="chat-code"><code>{{ block.content }}</code></pre>
+
+          <div *ngIf="block.type === 'diagram'" class="chat-diagram">
+            <div class="chat-diagram-label">Diagram</div>
+            <pre class="chat-diagram-body">{{ block.content }}</pre>
+          </div>
+
+          <hr *ngIf="block.type === 'divider'" class="chat-divider" />
+
+        </ng-container>
+      </div>
+    </div>
+
+    <div *ngIf="loading" class="chat-msg chat-msg--assistant">
+      <div class="chat-msg-bubble chat-msg-bubble--loading">
+        <app-ai-spark [size]="16" [pulse]="true"></app-ai-spark>
+        <span>Thinking...</span>
+      </div>
+    </div>
+
+    <div #messagesEnd></div>
+  </div>
+
+  <div *ngIf="errorMsg" class="chatbot-error">{{ errorMsg }}</div>
+
+  <footer class="chatbot-footer">
+    <textarea
+      class="chatbot-input"
+      [(ngModel)]="inputText"
+      (keydown)="onKeydown($event)"
+      placeholder="Ask a study question..."
+      rows="2"
+      [disabled]="loading"></textarea>
+    <button type="button" class="chatbot-send" (click)="send()" [disabled]="loading || !inputText.trim()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </footer>
+</aside>

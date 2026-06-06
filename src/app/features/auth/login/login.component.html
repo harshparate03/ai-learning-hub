@@ -1,0 +1,63 @@
+<div class="auth-page">
+  <div class="auth-card">
+
+    <!-- Brand mark -->
+    <div class="text-center mb-4">
+      <a routerLink="/" class="auth-logo">
+        <span class="auth-logo-mark">
+          <span class="auth-logo-inner"></span>
+        </span>
+      </a>
+      <h2 class="auth-heading">Welcome Back</h2>
+      <p class="auth-sub">Sign in to continue learning</p>
+    </div>
+
+    <!-- Error alert -->
+    <div class="auth-alert auth-alert-error" *ngIf="errorMsg">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      {{ errorMsg }}
+    </div>
+
+    <!-- Email -->
+    <div class="auth-field mb-3">
+      <label class="auth-label">Email address</label>
+      <div class="auth-input-wrap">
+        <span class="auth-input-icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+        </span>
+        <input type="email" class="auth-input form-control" [(ngModel)]="email"
+          placeholder="you@example.com" autocomplete="email" />
+      </div>
+    </div>
+
+    <!-- Password -->
+    <div class="auth-field mb-4">
+      <label class="auth-label">Password</label>
+      <div class="auth-input-wrap">
+        <span class="auth-input-icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </span>
+        <input type="password" class="auth-input form-control" [(ngModel)]="password"
+          placeholder="Enter your password" autocomplete="current-password"
+          (keyup.enter)="login()" />
+      </div>
+    </div>
+
+    <button class="auth-submit" (click)="login()">
+      <span>Sign In</span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+    </button>
+
+    <div class="auth-divider">
+      <span class="auth-divider-line"></span>
+      <span class="auth-divider-text">New here?</span>
+      <span class="auth-divider-line"></span>
+    </div>
+
+    <p class="auth-switch">
+      Don't have an account?
+      <a routerLink="/signup" class="auth-switch-link">Create one free</a>
+    </p>
+
+  </div>
+</div>

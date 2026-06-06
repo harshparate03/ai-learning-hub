@@ -1,0 +1,147 @@
+<div class="chat-page">
+  <div class="container">
+
+    <!-- Header -->
+    <div class="mb-5 text-center">
+      <div class="overline mb-2">AI Document Chat</div>
+      <h1 class="page-title">Chat with <span class="gradient-text">PDF</span></h1>
+      <p class="theme-text-secondary" style="font-size:15px;">Upload a PDF and ask questions — the AI answers from the document only</p>
+    </div>
+
+    <div class="row gy-4">
+
+      <!-- Sidebar -->
+      <div class="col-lg-3">
+        <div class="chat-sidebar">
+
+          <div class="sidebar-title">Document</div>
+
+          <!-- Upload zone -->
+          <div class="upload-zone mb-3" [class.uploading]="uploading" (click)="!uploading && fileInput.click()">
+            <div *ngIf="!uploading" class="upload-zone-inner">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" style="opacity:.5;margin-bottom:10px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+              <div class="upload-zone-text">Click to upload PDF</div>
+              <div class="upload-zone-hint">PDF files only</div>
+            </div>
+            <div *ngIf="uploading" class="upload-zone-inner">
+              <span class="spinner-border" style="width:24px;height:24px;color:var(--indigo-400);margin-bottom:10px;"></span>
+              <div class="upload-zone-text">Reading PDF...</div>
+            </div>
+          </div>
+          <input #fileInput type="file" class="d-none" (change)="onFileSelected($event)" accept=".pdf" [disabled]="uploading" />
+
+          <!-- Loaded state -->
+          <div *ngIf="pdfText && !uploading" class="pdf-loaded-chip mb-3">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span class="text-truncate">{{ fileName || 'PDF loaded' }}</span>
+          </div>
+
+          <!-- Clear button -->
+          <button *ngIf="pdfText" class="btn-clear-chat mb-3" (click)="clearChat()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+            Clear &amp; Reset
+          </button>
+
+          <hr style="border-color:var(--border-color);margin:12px 0;">
+
+          <div class="sidebar-title">Tips</div>
+          <div class="tip-item">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--indigo-400)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Ask specific questions about topics in the document
+          </div>
+          <div class="tip-item">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--purple-400)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Request summaries of specific sections
+          </div>
+          <div class="tip-item">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--cyan-400)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Ask for definitions of terms used in the PDF
+          </div>
+          <div class="tip-item">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--green-400)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Only information from the PDF will be used
+          </div>
+        </div>
+      </div>
+
+      <!-- Chat panel -->
+      <div class="col-lg-9">
+        <div class="chat-panel">
+
+          <!-- Chat header -->
+          <div class="chat-header">
+            <div class="chat-header-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </div>
+            <div>
+              <div class="chat-header-title">Document Assistant</div>
+              <div class="chat-header-status" [class.online]="!!pdfText">
+                <span class="status-dot"></span>
+                {{ uploading ? 'Reading PDF...' : pdfText ? 'Ready · ' + fileName : 'Upload a PDF to start' }}
+              </div>
+            </div>
+          </div>
+
+          <!-- Messages -->
+          <div class="chat-messages" #messagesContainer>
+
+            <!-- Empty state -->
+            <div *ngIf="messages.length === 0 && !uploading" class="chat-empty">
+              <div class="chat-empty-icon">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+              </div>
+              <div class="chat-empty-text">Upload a PDF to begin chatting</div>
+            </div>
+
+            <!-- Message rows -->
+            <ng-container *ngFor="let msg of messages">
+              <div class="msg-row" [class.msg-row-user]="msg.role==='user'">
+                <div class="msg-avatar" [class.msg-avatar-ai]="msg.role==='ai'" [class.msg-avatar-user]="msg.role==='user'">
+                  <svg *ngIf="msg.role==='ai'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 0 0 4.93 19.07M12 2v2m0 18v-2m10-8h-2M4 12H2"/></svg>
+                  <svg *ngIf="msg.role==='user'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                </div>
+
+                <!-- Typing indicator -->
+                <div *ngIf="msg.typing" class="msg-bubble msg-bubble-ai msg-bubble-typing">
+                  <span class="typing-dot"></span>
+                  <span class="typing-dot"></span>
+                  <span class="typing-dot"></span>
+                </div>
+
+                <!-- Normal message — AI uses innerHTML with markdown rendering -->
+                <div *ngIf="!msg.typing && msg.role==='ai'" class="msg-bubble msg-bubble-ai"
+                  [innerHTML]="renderMarkdown(msg.text)">
+                </div>
+
+                <!-- User message — plain text -->
+                <div *ngIf="!msg.typing && msg.role==='user'" class="msg-bubble msg-bubble-user">
+                  {{ msg.text }}
+                </div>
+              </div>
+            </ng-container>
+
+          </div>
+
+          <!-- Input bar -->
+          <div class="chat-input-bar">
+            <textarea class="chat-input form-control"
+              [(ngModel)]="question"
+              [disabled]="!pdfText || loading || uploading"
+              placeholder="{{ uploading ? 'Reading PDF...' : pdfText ? 'Ask a question about your PDF...' : 'Upload a PDF first...' }}"
+              rows="1"
+              (keydown.enter)="onChatEnter($event)">
+            </textarea>
+            <button class="btn-send"
+              (click)="askQuestion()"
+              [disabled]="!pdfText || !question.trim() || loading || uploading">
+              <svg *ngIf="!loading" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              <span *ngIf="loading" class="spinner-border spinner-border-sm" style="width:14px;height:14px;"></span>
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>

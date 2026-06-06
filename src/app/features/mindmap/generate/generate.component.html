@@ -1,0 +1,338 @@
+<div class="mindmap-page">
+  <div class="mindmap-layout">
+
+    <!-- ── INPUT PANEL ── -->
+    <div class="input-panel section-card">
+
+      <div class="panel-label-row">
+        <span class="panel-logo-wrap">
+          <app-logo [size]="14" variant="white"></app-logo>
+        </span>
+        <h6 class="panel-label fw-bold mb-0">AI Mind Map</h6>
+      </div>
+
+      <div class="btn-mode-group mb-3">
+        <button class="btn-mode" [class.active]="inputMode==='text'" (click)="switchMode('text')">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="17" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="3" y2="14"/><line x1="17" y1="18" x2="3" y2="18"/></svg>
+          Text / Topic
+        </button>
+        <button class="btn-mode" [class.active]="inputMode==='youtube'" (click)="switchMode('youtube')">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          YouTube URL
+        </button>
+        <button class="btn-mode" [class.active]="inputMode==='file'" (click)="switchMode('file')">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          Upload File
+        </button>
+      </div>
+
+      <div class="input-mode-area">
+        <div class="input-mode-panel" [class.input-mode-panel--active]="inputMode==='text'">
+          <textarea class="form-control theme-input" rows="5" [(ngModel)]="textInput"
+            placeholder="e.g. Software Testing, Machine Learning..."></textarea>
+        </div>
+
+        <div class="input-mode-panel" [class.input-mode-panel--active]="inputMode==='youtube'">
+          <input type="url" class="form-control theme-input mb-2" [(ngModel)]="youtubeUrl"
+            placeholder="https://youtube.com/watch?v=..." />
+          <p class="theme-text-secondary mb-0" style="font-size:11px;">AI extracts topics from the video</p>
+        </div>
+
+        <div class="input-mode-panel" [class.input-mode-panel--active]="inputMode==='file'">
+          <input type="file" class="form-control theme-input mb-2"
+            (change)="onFileSelected($event)" accept=".pdf,.txt,.md,.docx,.pptx,.ppt,.csv" />
+          <p class="theme-text-secondary mb-1" style="font-size:11px;">PDF, DOCX, PPTX, TXT, CSV</p>
+          <span *ngIf="fileName" class="file-name-badge">{{ fileName }}</span>
+        </div>
+      </div>
+
+      <div *ngIf="errorMsg" class="mm-error-msg mt-2">{{ errorMsg }}</div>
+
+      <div *ngIf="progress" class="mm-progress mt-2">
+        <app-ai-spark [size]="14" [spin]="true"></app-ai-spark>
+        {{ progress }}
+      </div>
+
+      <div class="btn-mm-generate-wrap">
+        <button class="btn-mm-generate" (click)="generate()" [disabled]="!canGenerate || loading">
+          {{ loading ? 'Generating...' : 'Generate' }}
+        </button>
+      </div>
+
+      <!-- ACTIONS -->
+      <div class="mt-2 d-flex flex-column gap-1">
+        <ng-container *ngIf="rootNode">
+          <button class="btn-mm-action btn-mm-save" (click)="saveMindMap()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save
+          </button>
+          <button class="btn-mm-action btn-mm-export" (click)="exportNotes()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Export Notes
+          </button>
+        </ng-container>
+        <button class="btn-mm-action" (click)="showSaved=!showSaved">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          Saved ({{ savedMaps.length }})
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-left:auto;">
+            <polyline *ngIf="!showSaved" points="6 9 12 15 18 9"/>
+            <polyline *ngIf="showSaved"  points="18 15 12 9 6 15"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- SAVED LIST -->
+      <div *ngIf="showSaved" class="saved-list mt-2">
+        <div *ngIf="savedMaps.length === 0" class="theme-text-secondary text-center py-3" style="font-size:12px;">
+          No saved maps yet.
+        </div>
+        <div *ngFor="let m of savedMaps; let i = index" class="saved-item" (click)="loadSaved(m)">
+          <div class="saved-item-info">
+            <span class="saved-item-title">{{ m.title }}</span>
+            <span class="saved-item-meta">{{ m.date }} · {{ m.data?.children?.length || 0 }} branches</span>
+          </div>
+          <button class="saved-item-del" (click)="deleteSaved(i); $event.stopPropagation()" title="Delete">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+          </button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── TREE PANEL ── -->
+    <div class="tree-panel section-card">
+
+      <!-- Empty -->
+      <div *ngIf="!rootNode && !loading" class="panel-empty">
+        <div class="panel-empty-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="12" cy="12" r="3"/><line x1="5" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="19" y2="12"/><line x1="12" y1="5" x2="12" y2="10"/><line x1="12" y1="14" x2="12" y2="19"/></svg>
+        </div>
+        <p class="panel-empty-title mt-3 mb-1">Mind Map</p>
+        <p class="theme-text-secondary small">Enter a topic or upload a file</p>
+      </div>
+
+      <!-- Loading -->
+      <div *ngIf="loading" class="panel-empty">
+        <app-ai-spark [size]="52" [spin]="true"></app-ai-spark>
+        <p class="panel-empty-title small mb-1 mt-3">Building...</p>
+        <p class="theme-text-secondary" style="font-size:11px;">{{ progress }}</p>
+      </div>
+
+      <!-- Tree -->
+      <ng-container *ngIf="rootNode && !loading">
+        <div class="tree-header">
+          <span class="tree-header-title">{{ rootNode.label }}</span>
+          <div class="d-flex gap-1">
+            <span class="tree-badge">{{ countAllNodes(rootNode) }} nodes</span>
+            <span class="tree-badge tree-badge-green">{{ rootNode.children.length }} branches</span>
+          </div>
+        </div>
+        <div class="tree-scroll">
+          <ng-container *ngTemplateOutlet="treeNode; context: { node: rootNode, depth: 0 }"></ng-container>
+        </div>
+      </ng-container>
+
+    </div>
+
+    <!-- ── DEFINITION PANEL ── -->
+    <div class="def-panel section-card" [class.def-panel--active]="selectedNode">
+
+      <!-- Placeholder: no selection, no video meta -->
+      <div *ngIf="!selectedNode && !currentVideoMeta" class="panel-empty">
+        <div class="panel-empty-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </div>
+        <p class="theme-text-secondary small mt-2">Click any node to view its definition</p>
+      </div>
+
+      <!-- YouTube video metadata card (shown when no node selected) -->
+      <div *ngIf="!selectedNode && currentVideoMeta" class="video-meta-card">
+        <div class="video-meta-thumbnail-wrap">
+          <img [src]="currentVideoMeta.thumbnailUrl" alt="Video thumbnail" class="video-meta-thumbnail" />
+          <a [href]="currentVideoMeta.videoUrl" target="_blank" rel="noopener" class="video-play-btn" title="Watch on YouTube">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          </a>
+        </div>
+
+        <div class="video-meta-body">
+          <h6 class="video-meta-title">{{ currentVideoMeta.title }}</h6>
+
+          <div class="video-meta-stats">
+            <span *ngIf="currentVideoMeta.channel" class="vm-stat">
+              <svg class="vm-stat-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              {{ currentVideoMeta.channel }}
+            </span>
+            <span *ngIf="currentVideoMeta.duration" class="vm-stat">
+              <svg class="vm-stat-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              {{ currentVideoMeta.duration }}
+            </span>
+            <span *ngIf="currentVideoMeta.views" class="vm-stat">
+              <svg class="vm-stat-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              {{ currentVideoMeta.views }}
+            </span>
+            <span *ngIf="currentVideoMeta.uploadDate" class="vm-stat">
+              <svg class="vm-stat-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              {{ currentVideoMeta.uploadDate }}
+            </span>
+          </div>
+
+          <!-- Tags -->
+          <div *ngIf="currentVideoMeta.tags.length > 0" class="video-meta-section">
+            <p class="vm-section-label">TOPICS</p>
+            <div class="d-flex flex-wrap gap-1">
+              <span *ngFor="let tag of currentVideoMeta.tags.slice(0, 12)" class="vm-tag">{{ tag }}</span>
+            </div>
+          </div>
+
+          <!-- Chapters -->
+          <div *ngIf="currentVideoMeta.chapters.length > 0" class="video-meta-section">
+            <p class="vm-section-label">CHAPTERS</p>
+            <div class="vm-chapters">
+              <div *ngFor="let ch of currentVideoMeta.chapters" class="vm-chapter">
+                <span class="vm-chapter-time">{{ ch.time }}</span>
+                <span class="vm-chapter-title">{{ ch.title }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Description -->
+          <div *ngIf="currentVideoMeta.description" class="video-meta-section">
+            <p class="vm-section-label">DESCRIPTION</p>
+            <p class="vm-description">{{ currentVideoMeta.description }}</p>
+          </div>
+
+          <a [href]="currentVideoMeta.videoUrl" target="_blank" rel="noopener" class="btn-watch-yt mt-2">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Watch on YouTube
+          </a>
+        </div>
+      </div>
+
+      <!-- Definition content -->
+      <div *ngIf="selectedNode" class="def-content">
+        <div class="def-header">
+          <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+            <span class="level-badge" [style.background]="selectedNode.color">
+              {{ getLevelLabel(selectedNode.level) }}
+            </span>
+            <span class="theme-text-secondary" style="font-size:11px;">{{ getBreadcrumb(selectedNode) }}</span>
+          </div>
+          <h6 class="fw-bold mb-0" [style.color]="selectedNode.color">{{ selectedNode.label }}</h6>
+
+          <!-- Video context for selected node in YouTube maps -->
+          <div *ngIf="currentVideoMeta" class="video-context-strip mt-2">
+            <img [src]="currentVideoMeta.thumbnailUrl" alt="" class="video-ctx-thumb" />
+            <div class="video-ctx-info">
+              <span class="video-ctx-title">{{ currentVideoMeta.title }}</span>
+              <span class="video-ctx-meta">
+                <span *ngIf="currentVideoMeta.channel">{{ currentVideoMeta.channel }}</span>
+                <span *ngIf="currentVideoMeta.duration"> · {{ currentVideoMeta.duration }}</span>
+                <span *ngIf="currentVideoMeta.views"> · {{ currentVideoMeta.views }}</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div *ngIf="loadingDefinition" class="d-flex align-items-center gap-2 py-3">
+          <app-ai-spark [size]="18" [pulse]="true"></app-ai-spark>
+          <span class="theme-text-secondary small">Loading definition...</span>
+        </div>
+
+        <div *ngIf="!loadingDefinition && selectedNode.definition" class="def-body">
+          <ng-container *ngFor="let block of parseDefinition(selectedNode.definition)">
+
+            <!-- Paragraph -->
+            <p *ngIf="block.type === 'para'" class="def-para">{{ block.content }}</p>
+
+            <!-- Heading -->
+            <p *ngIf="block.type === 'heading'" class="def-heading">{{ block.content }}</p>
+
+            <!-- List -->
+            <ul *ngIf="block.type === 'list'" class="def-list">
+              <li *ngFor="let item of block.items">{{ item }}</li>
+            </ul>
+
+            <!-- Table -->
+            <div *ngIf="block.type === 'table'" class="def-table-wrap">
+              <table class="def-table">
+                <thead>
+                  <tr>
+                    <th *ngFor="let cell of block.rows![0]">{{ cell }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let row of block.rows!.slice(1)">
+                    <td *ngFor="let cell of row">{{ cell }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Code block -->
+            <pre *ngIf="block.type === 'code'" class="def-code"><code>{{ block.content }}</code></pre>
+
+            <!-- Divider -->
+            <hr *ngIf="block.type === 'divider'" class="def-divider" />
+
+          </ng-container>
+        </div>
+
+        <div *ngIf="!loadingDefinition && selectedNode.children.length > 0" class="def-subnodes">
+          <p class="theme-text-secondary fw-bold mb-2" style="font-size:11px;">SUB-NODES</p>
+          <div class="d-flex flex-wrap gap-1">
+            <button *ngFor="let child of selectedNode.children"
+              class="child-chip"
+              [style.border-color]="child.color"
+              [style.color]="child.color"
+              (click)="toggleNode(child)">
+              {{ child.label }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+<!-- ── TREE NODE TEMPLATE ── -->
+<ng-template #treeNode let-node="node" let-depth="depth">
+  <div class="node-wrap" [style.padding-left.px]="depth * 12">
+
+    <div class="tree-node"
+      [class.tree-node--selected]="selectedNode?.id === node.id"
+      [class.tree-node--root]="node.level === 0"
+      [style.border-left-color]="node.color"
+      (click)="toggleNode(node)">
+
+      <span class="expand-icon">
+        <ng-container *ngIf="hasChildren(node)">
+          <svg *ngIf="node.expanded"  width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          <svg *ngIf="!node.expanded" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        </ng-container>
+        <svg *ngIf="!hasChildren(node)" width="6" height="6" viewBox="0 0 10 10"><circle cx="5" cy="5" r="5" fill="currentColor" opacity=".4"/></svg>
+      </span>
+
+      <span class="node-dot" [style.background]="node.color"></span>
+
+      <span class="node-label"
+        [class.node-label--root]="node.level === 0"
+        [class.node-label--branch]="node.level === 1"
+        [class.node-label--deep]="node.level >= 4">
+        {{ node.label }}
+      </span>
+
+      <span class="node-tag" [style.background]="node.color + '22'" [style.color]="node.color">
+        {{ getLevelLabel(node.level) }}
+      </span>
+    </div>
+
+    <div *ngIf="node.expanded && node.children.length > 0" class="node-children">
+      <ng-container *ngFor="let child of node.children">
+        <ng-container *ngTemplateOutlet="treeNode; context: { node: child, depth: depth + 1 }"></ng-container>
+      </ng-container>
+    </div>
+
+  </div>
+</ng-template>

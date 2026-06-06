@@ -1,0 +1,218 @@
+/* ── SAVED MIND MAPS PAGE ──────────────────────────────── */
+.saved-page {
+  background: var(--bg-primary);
+  min-height: 100vh;
+  padding: 48px 0;
+}
+
+.page-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+/* ── MAP CARD ──────────────────────────────────────────── */
+.map-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  transition: border-color 0.2s, transform 0.18s, box-shadow 0.2s;
+  position: relative;
+}
+
+.map-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--grad-primary);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.map-card:hover {
+  border-color: var(--border-hover);
+  transform: translateY(-4px);
+  box-shadow: 0 16px 48px rgba(99,102,241,0.12);
+}
+
+.map-card:hover::before { opacity: 1; }
+
+/* ── CARD HEADER ───────────────────────────────────────── */
+.map-card-header {
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--card-header);
+}
+
+.map-card-header h5 {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.4;
+  word-break: break-word;
+  color: var(--text-primary);
+}
+
+.map-card-date {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* ── CARD BODY ─────────────────────────────────────────── */
+.map-card-body {
+  padding: 16px 20px;
+  flex: 1;
+}
+
+.map-stats {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.map-stat-chip {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.map-stat-branches {
+  background: rgba(99,102,241,0.12);
+  border: 1px solid rgba(99,102,241,0.25);
+  color: var(--purple-400);
+}
+
+.map-stat-nodes {
+  background: rgba(52,211,153,0.1);
+  border: 1px solid rgba(52,211,153,0.25);
+  color: var(--green-400);
+}
+
+.branches-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+/* ── BRANCH TAGS ───────────────────────────────────────── */
+.branch-tag {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 1px solid;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 2px;
+}
+
+/* ── CARD FOOTER ───────────────────────────────────────── */
+.map-card-footer {
+  padding: 14px 20px;
+  border-top: 1px solid var(--border-color);
+}
+
+.btn-open-map {
+  width: 100%;
+  background: var(--grad-btn);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  box-shadow: 0 3px 12px rgba(99,102,241,0.25);
+}
+
+.btn-open-map:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(99,102,241,0.35);
+}
+
+/* ── DELETE CONFIRM OVERLAY ────────────────────────────── */
+.delete-confirm {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-card);
+  border-radius: 18px;
+  border: 2px solid #f87171;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  padding: 24px;
+  animation: fadeIn 0.15s ease;
+}
+
+.delete-confirm-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+/* ── EMPTY STATE ───────────────────────────────────────── */
+.empty-state {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  padding: 64px 40px;
+  text-align: center;
+}
+
+.empty-icon-wrap {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  background: rgba(99,102,241,.08);
+  border: 1px solid var(--border-color);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted);
+  margin: 0 auto 16px;
+}
+
+.empty-title {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+/* ── DELETE ALL BTN ────────────────────────────────────── */
+.btn-delete-all {
+  background: transparent;
+  border: 1px solid rgba(239,68,68,0.35);
+  color: #f87171;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-delete-all:hover {
+  background: rgba(239,68,68,0.1);
+  border-color: #f87171;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
