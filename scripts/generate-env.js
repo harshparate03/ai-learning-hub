@@ -1,18 +1,22 @@
 const fs   = require('fs');
 const path = require('path');
+const dir  = path.join(__dirname, '../src/environments');
 
-const outPath = path.join(__dirname, '../src/environments/environment.prod.ts');
-const groq    = process.env['GROQ_API_KEY'] || '';
-
+const groq = process.env['GROQ_API_KEY'] || '';
 if (!groq) console.warn('[generate-env] GROQ_API_KEY is empty');
 
-fs.writeFileSync(outPath, `/**
+const content = (production) => `/**
  * Auto-generated at build time — do not edit manually.
  */
 export const environment = {
-  production: true,
+  production: ${production},
   groqApiKey: ${JSON.stringify(groq)},
 };
-`, 'utf8');
+`;
 
-console.log(`[generate-env] ✓ groq: ${groq ? '✓ set' : '✗ empty'}`);
+if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+fs.writeFileSync(path.join(dir, 'environment.ts'),      content(false), 'utf8');
+fs.writeFileSync(path.join(dir, 'environment.prod.ts'), content(true),  'utf8');
+
+console.log(`[generate-env] ✓ wrote environment.ts + environment.prod.ts — groq: ${groq ? '✓ set' : '✗ empty'}`);
