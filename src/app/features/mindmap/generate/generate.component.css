@@ -141,6 +141,7 @@
   min-height: 148px;
   height: 148px;
   margin-bottom: 16px;
+  overflow: hidden;
 }
 
 .input-mode-panel {
@@ -168,6 +169,10 @@
 .input-mode-area input[type="url"],
 .input-mode-area input[type="file"] {
   width: 100%;
+  /* prevent horizontal scroll on long URLs */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── SAVED LIST ─────────────────────────────────────────── */

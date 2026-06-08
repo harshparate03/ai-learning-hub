@@ -535,14 +535,26 @@ Use EXACTLY this format:
     this.ai.generateWithGroq(prompts[type]).subscribe({
       next: (res: any) => {
         const text = res?.choices?.[0]?.message?.content
-          || res?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          || res?.candidates?.[0]?.content?.parts?.[0]?.text
+          || res?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || '').join('')
+          || '';
         if (type === 'summary')   this.summaryBlocks = this.parseBlocks(text);
         if (type === 'keypoints') this.parseKeyPoints(text);
         if (type === 'notes')     this.notesBlocks = this.parseBlocks(text);
         if (type === 'quiz')      this.parseQuiz(text);
         this.loadingAI = false;
       },
-      error: () => { this.errorMsg = 'AI generation failed. Try again.'; this.loadingAI = false; }
+      error: (err: any) => {
+        const status = err?.status;
+        if (status === 401 || status === 403) {
+          this.errorMsg = 'API key is invalid. Please update the API key in the environment config.';
+        } else if (status === 429) {
+          this.errorMsg = 'Rate limit reached. Please wait a moment and try again.';
+        } else {
+          this.errorMsg = 'AI generation failed. Try again.';
+        }
+        this.loadingAI = false;
+      }
     });
   }
 
@@ -749,11 +761,12 @@ Output ONLY:
         ...this.parseBlocks(getText(results[1])),
         ...this.parseBlocks(getText(results[2]))
       ];
-    } catch {
+    } catch (e: any) {
+      console.error('[VisualNotes Error]', e);
       this.errorMsg = 'Generation failed. Try again.';
+    } finally {
+      this.loadingAI = false;
     }
-
-    this.loadingAI = false;
   }
 
   private extractChapters(description: string): string {

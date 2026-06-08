@@ -88,9 +88,10 @@ const CURATED_VIDEOS: { videoId: string; title: string; channel: string; tags: s
 @Injectable({ providedIn: 'root' })
 export class YoutubeService {
 
-  private API_KEYS = environment.youtubeApiKeys;
+  private API_KEYS = (environment.youtubeApiKeys || []).filter(k => k && k.length > 10);
   private keyIndex = 0;
   private get KEY(): string { return this.API_KEYS[this.keyIndex % this.API_KEYS.length]; }
+  private get hasApiKey(): boolean { return this.API_KEYS.length > 0; }
 
   private SEARCH_URL = 'https://www.googleapis.com/youtube/v3/search';
   private VIDEO_URL  = 'https://www.googleapis.com/youtube/v3/videos';
@@ -160,12 +161,19 @@ export class YoutubeService {
 
   searchVideos(query: string): Observable<any> {
     const safeQuery = sanitizeUserInput(query, 200);
+
+    // No valid YouTube Data API key — go straight to AI+curated fallback
+    if (!this.hasApiKey) {
+      console.warn('[YouTube] No API key configured — using AI+curated fallback.');
+      return this.searchWithAIFallback(safeQuery);
+    }
+
     return this.http.get(this.SEARCH_URL, {
       params: { part: 'snippet', q: safeQuery, type: 'video', maxResults: '12', key: this.KEY }
     }).pipe(
       catchError((err) => {
         console.warn('[YouTube] Data API failed:', err?.status, err?.error?.error?.message);
-        return this.searchWithAIFallback(query);
+        return this.searchWithAIFallback(safeQuery);
       })
     );
   }
@@ -298,11 +306,16 @@ Return ONLY a JSON array — no markdown, no explanation:
   }
 
   getVideoDetails(videoId: string): Observable<any> {
+    // No valid key — return empty so callers fall back to oEmbed
+    if (!this.hasApiKey) {
+      return of({ items: [] });
+    }
     return this.http.get(this.VIDEO_URL, {
       params: { part: 'snippet,statistics,contentDetails', id: videoId, key: this.KEY }
     }).pipe(
       catchError(() => {
         this.keyIndex++;
+        if (!this.hasApiKey) return of({ items: [] });
         return this.http.get(this.VIDEO_URL, {
           params: { part: 'snippet,statistics,contentDetails', id: videoId, key: this.KEY }
         }).pipe(catchError(() => of({ items: [] })));

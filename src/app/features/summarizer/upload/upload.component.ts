@@ -214,7 +214,10 @@ CONTENT:
 ${chunks[i]}`;
 
         const res: any = await this.ai.generateWithGroq(prompt).toPromise();
-        const text = res?.choices?.[0]?.message?.content || res?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const text = res?.choices?.[0]?.message?.content
+          || res?.candidates?.[0]?.content?.parts?.[0]?.text
+          || res?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || '').join('')
+          || '';
         this.chunkResults.push(text);
 
         this.parseTopics(this.chunkResults.join('\n\n'));
@@ -256,23 +259,29 @@ CONTENT:
 ${this.chunkResults.join('\n\n').slice(0, 8000)}`;
 
       const qaRes: any = await this.ai.generateWithGroq(qaPrompt).toPromise();
-      const qaText = qaRes?.choices?.[0]?.message?.content || qaRes?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const qaText = qaRes?.choices?.[0]?.message?.content
+        || qaRes?.candidates?.[0]?.content?.parts?.[0]?.text
+        || qaRes?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || '').join('')
+        || '';
       this.parseQuestions(qaText);
 
       this.progress = '';
       this.loading = false;
 
     } catch (err: any) {
+      const status = err?.status;
       const msg = err?.error?.error?.message || err?.message || 'AI processing failed.';
-      if (msg.includes('high demand') || msg.includes('overloaded') || msg.includes('retry')) {
-        this.progress = 'Rate limit hit. Retrying in 30 seconds...';
-        await new Promise(r => setTimeout(r, 30000));
-        this.generateAI();
+      if (status === 401 || status === 403) {
+        this.errorMsg = 'API key is not valid. Please check the API key configuration.';
+      } else if (status === 429) {
+        this.errorMsg = 'Rate limit reached. Please wait a moment and try again.';
+      } else if (status === 0 || !status) {
+        this.errorMsg = 'Network error — check your internet connection and try again.';
       } else {
         this.errorMsg = msg;
-        this.progress = '';
-        this.loading = false;
       }
+      this.progress = '';
+      this.loading = false;
     }
   }
 
