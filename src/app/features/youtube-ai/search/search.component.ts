@@ -534,10 +534,7 @@ Use EXACTLY this format:
 
     this.ai.generateWithGroq(prompts[type]).subscribe({
       next: (res: any) => {
-        const text = res?.choices?.[0]?.message?.content
-          || res?.candidates?.[0]?.content?.parts?.[0]?.text
-          || res?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || '').join('')
-          || '';
+        const text = res?.choices?.[0]?.message?.content || '';
         if (type === 'summary')   this.summaryBlocks = this.parseBlocks(text);
         if (type === 'keypoints') this.parseKeyPoints(text);
         if (type === 'notes')     this.notesBlocks = this.parseBlocks(text);
