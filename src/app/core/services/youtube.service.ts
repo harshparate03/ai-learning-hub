@@ -88,7 +88,7 @@ const CURATED_VIDEOS: { videoId: string; title: string; channel: string; tags: s
 @Injectable({ providedIn: 'root' })
 export class YoutubeService {
 
-  private API_KEYS = (environment.youtubeApiKeys || []).filter(k => k && k.length > 10);
+  private API_KEYS: string[] = [];
   private keyIndex = 0;
   private get KEY(): string { return this.API_KEYS[this.keyIndex % this.API_KEYS.length]; }
   private get hasApiKey(): boolean { return this.API_KEYS.length > 0; }
