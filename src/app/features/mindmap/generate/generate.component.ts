@@ -7,6 +7,7 @@ import { YoutubeService } from '../../../core/services/youtube.service';
 import * as pdfjsLib from 'pdfjs-dist';
 import * as mammoth from 'mammoth';
 import JSZip from 'jszip';
+import { jsPDF } from 'jspdf';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
@@ -919,17 +920,48 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
   saveMindMap() {
     if (!this.rootNode) return;
     const title = this.rootNode.label;
+    const date = new Date().toLocaleDateString();
     const exists = this.savedMaps.findIndex(m => m.title === title);
     if (exists !== -1) this.savedMaps.splice(exists, 1);
     this.savedMaps.unshift({
       title,
       data: JSON.parse(JSON.stringify(this.rootNode)),
-      date: new Date().toLocaleDateString(),
+      date,
       ...(this.currentVideoMeta ? { videoMeta: this.currentVideoMeta } : {})
     } as any);
     localStorage.setItem('mindmaps', JSON.stringify(this.savedMaps.slice(0, 20)));
     this.progress = `✓ Saved: "${title}"`;
     setTimeout(() => this.progress = '', 2000);
+  }
+
+  downloadPDF() {
+    if (!this.rootNode) return;
+    const doc = new jsPDF();
+    let y = 20;
+    const pageH = doc.internal.pageSize.height;
+    const add = (text: string, size: number, bold: boolean, color: number[], indent = 15) => {
+      doc.setFontSize(size);
+      doc.setFont('helvetica', bold ? 'bold' : 'normal');
+      doc.setTextColor(color[0], color[1], color[2]);
+      doc.splitTextToSize(text, 180 - indent).forEach((l: string) => {
+        if (y > pageH - 15) { doc.addPage(); y = 20; }
+        doc.text(l, indent, y); y += 7;
+      }); y += 2;
+    };
+    add(this.rootNode.label, 18, true, [99, 102, 241]);
+    add(`Mind Map · ${new Date().toLocaleDateString()}`, 10, false, [120, 120, 120]); y += 4;
+    if (this.rootNode.definition) add(this.rootNode.definition, 11, false, [60, 60, 60]);
+    y += 4;
+    const renderNode = (node: MindNode, depth: number) => {
+      const indent = 15 + depth * 8;
+      const size = depth === 0 ? 13 : depth === 1 ? 12 : 11;
+      const color: number[] = depth === 0 ? [50, 50, 180] : depth === 1 ? [70, 70, 70] : [90, 90, 90];
+      add(`${'  '.repeat(depth)}• ${node.label}`, size, depth <= 1, color, indent);
+      if (node.definition) add(node.definition, 10, false, [100, 100, 100], indent + 4);
+      node.children.forEach(c => renderNode(c, depth + 1));
+    };
+    this.rootNode.children.forEach(b => renderNode(b, 0));
+    doc.save(`${this.rootNode.label.replace(/\s+/g, '-').toLowerCase()}-mindmap.pdf`);
   }
 
   loadSaved(map: any) {

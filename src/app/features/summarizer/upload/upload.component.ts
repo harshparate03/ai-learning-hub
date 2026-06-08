@@ -58,6 +58,7 @@ export class UploadComponent {
   downloadFormat: string = 'pdf';
   copiedIndex: number = -1;
   detectedSubject: string = '';
+  savedMsg: string = '';
 
   constructor(private ai: AiService) {}
 
@@ -488,5 +489,21 @@ ${this.chunkResults.join('\n\n').slice(0, 8000)}`;
     const a = document.createElement('a');
     a.href = url; a.download = filename; a.click();
     URL.revokeObjectURL(url);
+  }
+
+  saveToHistory() {
+    if (!this.topics.length) return;
+    const title = this.detectedSubject || this.fileName || 'Study Notes';
+    const history = JSON.parse(localStorage.getItem('summarizer_history') || '[]');
+    history.unshift({
+      type: 'summary',
+      title,
+      date: new Date().toLocaleDateString(),
+      preview: this.topics[0]?.explanation?.replace(/\*\*(.*?)\*\*/g, '$1')?.slice(0, 100) || '',
+      content: this.topics.map(t => `${t.title.replace(/\*\*/g,'')}: ${t.explanation.replace(/\*\*(.*?)\*\*/g,'$1')}`).join('\n')
+    });
+    localStorage.setItem('summarizer_history', JSON.stringify(history.slice(0, 50)));
+    this.savedMsg = '✓ Saved!';
+    setTimeout(() => this.savedMsg = '', 2500);
   }
 }

@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { YoutubeService } from '../../../core/services/youtube.service';
 import { AiService } from '../../../core/services/ai.service';
 import { SafeUrlPipe } from '../../../core/pipes/safe-url.pipe';
+import { jsPDF } from 'jspdf';
 
 interface ContentBlock {
   type: 'heading' | 'subheading' | 'para' | 'bullet' | 'table' | 'diagram' | 'definition' | 'divider' | 'code' | 'visual' | 'step-visual';
@@ -55,6 +56,7 @@ export class SearchComponent {
   quiz: { q: string; a: string; open: boolean }[] = [];
   activeAITab: 'summary' | 'keypoints' | 'notes' | 'visual' | 'quiz' = 'summary';
   copiedIndex = -1;
+  savedMsg = '';
 
   /** User-chosen language for “Code + Visuals” (one block, not Python-by-default). */
   codeLanguage: CodeLanguageId = 'javascript';
@@ -959,5 +961,58 @@ Output ONLY:
     a.download = `${title.replace(/\s+/g, '-').toLowerCase()}-${suffix}.md`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  downloadPDF() {
+    const title = this.selectedVideo?.snippet?.title || 'YouTube Notes';
+    const tab = this.activeAITab;
+    const doc = new jsPDF();
+    let y = 20;
+    const pageH = doc.internal.pageSize.height;
+    const add = (text: string, size: number, bold: boolean, color: number[]) => {
+      doc.setFontSize(size); doc.setFont('helvetica', bold ? 'bold' : 'normal');
+      doc.setTextColor(color[0], color[1], color[2]);
+      doc.splitTextToSize(text, 175).forEach((l: string) => {
+        if (y > pageH - 15) { doc.addPage(); y = 20; }
+        doc.text(l, 15, y); y += 7;
+      }); y += 2;
+    };
+    add(title, 16, true, [99, 102, 241]);
+    add(`${tab.charAt(0).toUpperCase() + tab.slice(1)} — ${new Date().toLocaleDateString()}`, 10, false, [120, 120, 120]); y += 4;
+    const renderBlocks = (blocks: ContentBlock[]) => blocks.forEach(b => {
+      if (b.type === 'heading')    add(b.content || '', 13, true, [50, 50, 180]);
+      if (b.type === 'subheading') add(b.content || '', 12, true, [70, 70, 70]);
+      if (b.type === 'para')       add(b.content || '', 11, false, [40, 40, 40]);
+      if (b.type === 'bullet')     add(`• ${b.content}`, 11, false, [40, 40, 40]);
+      if (b.type === 'definition') add(`${b.term}: ${b.def}`, 11, false, [40, 40, 40]);
+      if (b.type === 'code')       add(b.content || '', 9, false, [80, 80, 80]);
+    });
+    if (tab === 'summary')   renderBlocks(this.summaryBlocks);
+    if (tab === 'notes')     renderBlocks(this.notesBlocks);
+    if (tab === 'visual')    renderBlocks(this.visualBlocks);
+    if (tab === 'keypoints') this.keyPoints.forEach((kp, i) => { add(`${i+1}. ${kp.title}`, 12, true, [50,50,180]); add(kp.detail, 11, false, [40,40,40]); });
+    if (tab === 'quiz')      this.quiz.forEach((qa, i) => { add(`Q${i+1}: ${qa.q}`, 12, true, [50,50,180]); add(`Answer: ${qa.a}`, 11, false, [40,40,40]); });
+    doc.save(`${title.replace(/\s+/g,'-').toLowerCase()}-${tab}.pdf`);
+  }
+
+  saveToHistory() {
+    const title = this.selectedVideo?.snippet?.title || 'YouTube Notes';
+    const tab = this.activeAITab;
+    let preview = '';
+    if (tab === 'summary' && this.summaryBlocks.length)   preview = this.summaryBlocks.find(b => b.type === 'para')?.content?.slice(0, 100) || '';
+    if (tab === 'keypoints' && this.keyPoints.length)     preview = this.keyPoints[0]?.title?.slice(0, 100) || '';
+    if (tab === 'notes' && this.notesBlocks.length)       preview = this.notesBlocks.find(b => b.type === 'para')?.content?.slice(0, 100) || '';
+    if (tab === 'quiz' && this.quiz.length)               preview = this.quiz[0]?.q?.slice(0, 100) || '';
+    const history = JSON.parse(localStorage.getItem('summarizer_history') || '[]');
+    history.unshift({
+      type: 'notes',
+      title: `${title} — ${tab}`,
+      date: new Date().toLocaleDateString(),
+      preview,
+      videoId: this.getVideoId(this.selectedVideo)
+    });
+    localStorage.setItem('summarizer_history', JSON.stringify(history.slice(0, 50)));
+    this.savedMsg = '✓ Saved to History';
+    setTimeout(() => this.savedMsg = '', 2500);
   }
 }

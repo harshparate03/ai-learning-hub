@@ -544,3 +544,24 @@
   }
   .msg-bubble { padding: 10px 14px; font-size: 13px; }
 }
+
+.btn-chat-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color .14s, color .14s, background .14s;
+  white-space: nowrap;
+}
+.btn-chat-action:hover {
+  border-color: var(--indigo-500);
+  color: var(--accent);
+  background: rgba(99,102,241,.07);
+}

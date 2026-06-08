@@ -217,7 +217,13 @@
           <button *ngIf="isTechTopic && isStudyRelated" class="ai-btn ai-btn-visual" [class.active]="activeAITab==='visual'" [disabled]="loadingAI" (click)="generateAI('visual')">Code + Visuals</button>
           <button class="ai-btn" [class.active]="activeAITab==='quiz'" [disabled]="loadingAI || !isStudyRelated" (click)="generateAI('quiz')">Quiz</button>
           <button *ngIf="summaryBlocks.length || notesBlocks.length || visualBlocks.length || keyPoints.length || quiz.length"
-            class="ai-btn ai-btn-download" (click)="saveNotes()">Download</button>
+            class="ai-btn ai-btn-download" (click)="saveNotes()">⬇ Download MD</button>
+          <button *ngIf="summaryBlocks.length || notesBlocks.length || visualBlocks.length || keyPoints.length || quiz.length"
+            class="ai-btn ai-btn-download" (click)="downloadPDF()">⬇ Download PDF</button>
+          <button *ngIf="summaryBlocks.length || notesBlocks.length || visualBlocks.length || keyPoints.length || quiz.length"
+            class="ai-btn ai-btn-save" (click)="saveToHistory()">
+            {{ savedMsg || '🔖 Save' }}
+          </button>
         </div>
 
         <div *ngIf="errorMsg" class="alert alert-danger py-2 small mt-2">{{ errorMsg }}</div>

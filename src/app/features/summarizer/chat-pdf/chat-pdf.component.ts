@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import * as pdfjsLib from 'pdfjs-dist';
 import { AiService } from '../../../core/services/ai.service';
+import { jsPDF } from 'jspdf';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
@@ -24,6 +25,7 @@ export class ChatPdfComponent {
   question  = '';
   loading   = false; // AI is responding
   uploading = false; // PDF is being read
+  savedMsg = '';
 
   messages: { role: 'user' | 'ai'; text: string; typing?: boolean }[] = [];
 
@@ -327,5 +329,42 @@ Answer clearly and completely using proper formatting. Use a table if the data s
     this.messages = [];
     this.pdfText  = '';
     this.fileName = '';
+  }
+
+  downloadPDF() {
+    if (!this.messages.length) return;
+    const doc = new jsPDF();
+    let y = 20;
+    const pageH = doc.internal.pageSize.height;
+    const addLine = (text: string, size: number, bold: boolean, color: number[]) => {
+      doc.setFontSize(size); doc.setFont('helvetica', bold ? 'bold' : 'normal');
+      doc.setTextColor(color[0], color[1], color[2]);
+      doc.splitTextToSize(text, 175).forEach((line: string) => {
+        if (y > pageH - 15) { doc.addPage(); y = 20; }
+        doc.text(line, 15, y); y += 7;
+      }); y += 2;
+    };
+    addLine(`Chat with PDF — ${this.fileName}`, 16, true, [99, 102, 241]);
+    addLine(new Date().toLocaleDateString(), 10, false, [120, 120, 120]); y += 4;
+    this.messages.forEach(m => {
+      addLine(m.role === 'user' ? 'You:' : 'AI Assistant:', 11, true, m.role === 'user' ? [99, 102, 241] : [16, 185, 129]);
+      addLine(m.text.replace(/<[^>]*>/g, '').replace(/[#*`_]/g, ''), 11, false, [40, 40, 40]); y += 3;
+    });
+    doc.save(`chat-${this.fileName.replace('.pdf', '') || 'document'}.pdf`);
+  }
+
+  saveChat() {
+    if (!this.messages.length || !this.fileName) return;
+    const history = JSON.parse(localStorage.getItem('summarizer_history') || '[]');
+    history.unshift({
+      type: 'qa',
+      title: `Chat: ${this.fileName}`,
+      date: new Date().toLocaleDateString(),
+      preview: this.messages.find(m => m.role === 'user')?.text?.slice(0, 100) || '',
+      content: this.messages.map(m => `${m.role === 'user' ? 'Q' : 'A'}: ${m.text.replace(/<[^>]*>/g, '')}`).join('\n')
+    });
+    localStorage.setItem('summarizer_history', JSON.stringify(history.slice(0, 50)));
+    this.savedMsg = '✓ Saved to History';
+    setTimeout(() => this.savedMsg = '', 2000);
   }
 }

@@ -73,12 +73,23 @@
             <div class="chat-header-icon">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
             </div>
-            <div>
+            <div style="flex:1;">
               <div class="chat-header-title">Document Assistant</div>
               <div class="chat-header-status" [class.online]="!!pdfText">
                 <span class="status-dot"></span>
                 {{ uploading ? 'Reading PDF...' : pdfText ? 'Ready · ' + fileName : 'Upload a PDF to start' }}
               </div>
+            </div>
+            <div class="d-flex gap-2" *ngIf="messages.length > 0">
+              <span *ngIf="savedMsg" style="font-size:12px;color:var(--green-400);align-self:center;">{{ savedMsg }}</span>
+              <button class="btn-chat-action" (click)="saveChat()" title="Save to History">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/></svg>
+                Save
+              </button>
+              <button class="btn-chat-action" (click)="downloadPDF()" title="Download PDF">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                PDF
+              </button>
             </div>
           </div>
 

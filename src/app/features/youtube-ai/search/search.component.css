@@ -665,3 +665,7 @@
   from { opacity: 0; transform: translateY(-8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+.ai-btn-save { border-color: rgba(99,102,241,.25); color: var(--accent); margin-top: 2px; }
+.ai-btn-save:hover:not(:disabled) { border-color: var(--indigo-500); background: rgba(99,102,241,.08); }
+.ai-btn-save.saved { color: var(--green-400); border-color: rgba(52,211,153,.4); }
