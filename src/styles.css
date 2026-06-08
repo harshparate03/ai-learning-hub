@@ -637,3 +637,118 @@ img { max-width: 100%; height: auto; }
     padding-bottom: max(0px, env(safe-area-inset-bottom));
   }
 }
+
+/* ── MOBILE EDGE-TO-EDGE FIX ────────────────────────────────────────────────
+   Problem: Bootstrap .container adds 12px gutter + our custom padding = double
+   side spacing on phones. Fix: normalize to a single 14px on mobile.
+   ────────────────────────────────────────────────────────────────────────── */
+
+@media (max-width: 767px) {
+
+  /* 1. Reset Bootstrap container gutter to a single controlled value */
+  .container,
+  .container-fluid,
+  .container-sm,
+  .container-md {
+    --bs-gutter-x: 0px;
+    padding-left:  14px !important;
+    padding-right: 14px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* 2. Navbar inner — tighter side padding so brand + hamburger hug edges */
+  .navbar-inner {
+    padding-left:  14px !important;
+    padding-right: 14px !important;
+  }
+
+  /* 3. Page sections — no extra outer padding */
+  .page-section,
+  .notes-page,
+  .yt-page,
+  .home-page,
+  .mindmap-page {
+    padding-left:  0 !important;
+    padding-right: 0 !important;
+  }
+
+  /* 4. Section cards inside containers keep internal padding */
+  .section-card,
+  .theme-card {
+    margin-left:  0 !important;
+    margin-right: 0 !important;
+    border-radius: 12px !important;
+  }
+
+  /* 5. Row gutters — prevent Bootstrap row negative margins from causing overflow */
+  .row {
+    --bs-gutter-x: 12px;
+    margin-left:  0 !important;
+    margin-right: 0 !important;
+  }
+  .row > * {
+    padding-left:  6px !important;
+    padding-right: 6px !important;
+  }
+
+  /* 6. Footer — full bleed */
+  .footer {
+    padding-left:  0 !important;
+    padding-right: 0 !important;
+  }
+
+  /* 7. Auth card — small margin so it doesn't touch edges */
+  .auth-card {
+    margin:  0 12px !important;
+    width:   calc(100% - 24px) !important;
+    max-width: 100% !important;
+  }
+
+  /* 8. Prevent any element from causing horizontal scroll */
+  body { overflow-x: hidden !important; }
+  * { max-width: 100%; box-sizing: border-box; }
+
+  /* 9. Mindmap page — own padding, no double spacing */
+  .mindmap-page {
+    padding: 10px !important;
+  }
+
+  /* 10. Summarizer / YouTube page inner containers */
+  .container.yt-page-inner,
+  .container.notes-container {
+    padding-left:  14px !important;
+    padding-right: 14px !important;
+  }
+}
+
+/* ── VERY SMALL PHONES (≤375px) ─────────────────────────── */
+@media (max-width: 375px) {
+  .container,
+  .container-fluid {
+    padding-left:  12px !important;
+    padding-right: 12px !important;
+  }
+  .navbar-inner {
+    padding-left:  12px !important;
+    padding-right: 12px !important;
+  }
+  .section-card,
+  .theme-card {
+    padding: 14px !important;
+  }
+}
+
+/* ── SAFE AREA (iPhone notch/home bar) ──────────────────── */
+@supports (padding: max(0px)) {
+  @media (max-width: 767px) {
+    .container,
+    .container-fluid {
+      padding-left:  max(14px, env(safe-area-inset-left)) !important;
+      padding-right: max(14px, env(safe-area-inset-right)) !important;
+    }
+    .app-main {
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+  }
+}
