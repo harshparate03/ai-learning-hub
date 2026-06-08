@@ -1,5 +1,5 @@
 import { Component } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
@@ -13,16 +13,29 @@ import { CommonModule } from '@angular/common';
 })
 export class SignupComponent {
 
-  email = '';
-  password = '';
+  email           = '';
+  password        = '';
   confirmPassword = '';
-  errorMsg = '';
-  successMsg = '';
+  errorMsg        = '';
+  successMsg      = '';
 
-  constructor(private auth: AuthService, private router: Router) {}
+  redirectUrl = '/';
+  constructor(
+    private auth:   AuthService,
+    private router: Router,
+    private route:  ActivatedRoute
+  ) {
+    this.route.queryParams.subscribe(p => {
+      if (p['redirect']) this.redirectUrl = p['redirect'];
+    });
+
+    if (this.auth.isLoggedIn()) {
+      this.router.navigateByUrl(this.redirectUrl);
+    }
+  }
 
   signup() {
-    this.errorMsg = '';
+    this.errorMsg  = '';
     this.successMsg = '';
 
     if (!this.email || !this.password || !this.confirmPassword) {
@@ -42,8 +55,10 @@ export class SignupComponent {
 
     const success = this.auth.signup(this.email, this.password);
     if (success) {
-      this.successMsg = 'Account created! Redirecting to login...';
-      setTimeout(() => this.router.navigate(['/login']), 1500);
+      this.successMsg = 'Account created! Signing you in...';
+      // Auto-login after signup, then redirect to original destination
+      this.auth.login(this.email, this.password);
+      setTimeout(() => this.router.navigateByUrl(this.redirectUrl), 1200);
     } else {
       this.errorMsg = 'Email already registered.';
     }

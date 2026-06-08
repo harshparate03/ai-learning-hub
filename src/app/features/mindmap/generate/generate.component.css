@@ -552,3 +552,64 @@
   flex-shrink: 0;
 }
 
+
+/* ── RESPONSIVE OVERRIDES (appended) ───────────────────── */
+
+/* Tablet portrait: unlock fixed height, 2-col grid */
+@media (max-width: 1100px) {
+  .mindmap-page {
+    height: auto !important;
+    overflow: auto !important;
+    min-height: calc(100vh - 64px);
+  }
+  .mindmap-layout {
+    grid-template-columns: 1fr 1fr !important;
+    grid-template-rows: auto auto auto !important;
+    height: auto !important;
+    gap: 12px !important;
+  }
+  .input-panel { grid-column: 1 / -1 !important; }
+  .def-panel   { grid-column: 1 / -1 !important; max-height: none !important; }
+  .input-panel, .tree-panel, .def-panel {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+  .tree-panel  { min-height: 360px !important; }
+  .def-panel   { min-height: 240px !important; overflow-y: auto !important; }
+  .tree-scroll { overflow-y: auto !important; }
+}
+
+/* Mobile: single column, all panels scroll */
+@media (max-width: 768px) {
+  .mindmap-page {
+    height: auto !important;
+    overflow: auto !important;
+    padding: 10px !important;
+    min-height: calc(100vh - 64px);
+  }
+  .mindmap-layout {
+    grid-template-columns: 1fr !important;
+    height: auto !important;
+    gap: 10px !important;
+  }
+  .input-panel, .tree-panel, .def-panel {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  .tree-panel  { min-height: 300px !important; }
+  .tree-scroll { overflow-y: auto !important; max-height: 55vh; }
+  .def-panel   { overflow-y: auto !important; min-height: 200px !important; }
+  .btn-mm-generate { width: 100% !important; min-height: 44px !important; }
+  .btn-mode-group  { flex-direction: row !important; flex-wrap: wrap !important; }
+  .btn-mode { flex: 1 1 calc(50% - 4px) !important; width: auto !important; min-height: 44px !important; }
+}
+
+@media (max-width: 480px) {
+  .mindmap-page { padding: 8px !important; }
+  .btn-mode { flex: 1 1 100% !important; }
+  .input-panel, .tree-panel, .def-panel { padding: 14px !important; border-radius: 14px !important; }
+  .node-tag { display: none !important; }
+}

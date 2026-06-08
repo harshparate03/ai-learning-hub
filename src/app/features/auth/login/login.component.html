@@ -56,7 +56,7 @@
 
     <p class="auth-switch">
       Don't have an account?
-      <a routerLink="/signup" class="auth-switch-link">Create one free</a>
+      <a [routerLink]="['/signup']" [queryParams]="redirectUrl !== '/' ? {redirect: redirectUrl} : {}" class="auth-switch-link">Create one free</a>
     </p>
 
   </div>

@@ -12,26 +12,26 @@ import { NotFoundComponent } from './features/not-found/not-found.component';
 import { authGuard } from './core/guards/auth.guard';
 
 export const routes: Routes = [
+  // ── Public routes (no auth required) ─────────────────
+  { path: '',       component: HomeComponent },   // Home is PUBLIC
   { path: 'login',  component: LoginComponent },
   { path: 'signup', component: SignupComponent },
 
-  { path: '',                    component: HomeComponent,     canActivate: [authGuard] },
-  { path: 'mindmap',             component: GenerateComponent, canActivate: [authGuard] },
-  { path: 'mindmap/saved',       component: SavedComponent,    canActivate: [authGuard] },
+  // ── Protected feature routes ──────────────────────────
+  { path: 'mindmap',           component: GenerateComponent, canActivate: [authGuard] },
+  { path: 'mindmap/saved',     component: SavedComponent,    canActivate: [authGuard] },
 
-  { path: 'youtube',             component: SearchComponent,   canActivate: [authGuard] },
-  // Dead stub routes → redirect to the working YouTube search page
-  { path: 'youtube/summary',     redirectTo: '/youtube', pathMatch: 'full' },
-  { path: 'youtube/notes',       redirectTo: '/youtube', pathMatch: 'full' },
+  { path: 'youtube',           component: SearchComponent,   canActivate: [authGuard] },
+  { path: 'youtube/summary',   redirectTo: '/youtube',            pathMatch: 'full' },
+  { path: 'youtube/notes',     redirectTo: '/youtube',            pathMatch: 'full' },
 
-  { path: 'summarizer/upload',   component: UploadComponent,   canActivate: [authGuard] },
-  { path: 'summarizer/chat',     component: ChatPdfComponent,  canActivate: [authGuard] },
-  // Dead stub routes → redirect to upload (the main summarizer entry point)
-  { path: 'summarizer/summary',  redirectTo: '/summarizer/upload', pathMatch: 'full' },
-  { path: 'summarizer/qa',       redirectTo: '/summarizer/upload', pathMatch: 'full' },
+  { path: 'summarizer/upload', component: UploadComponent,   canActivate: [authGuard] },
+  { path: 'summarizer/chat',   component: ChatPdfComponent,  canActivate: [authGuard] },
+  { path: 'summarizer/summary',redirectTo: '/summarizer/upload',  pathMatch: 'full' },
+  { path: 'summarizer/qa',     redirectTo: '/summarizer/upload',  pathMatch: 'full' },
 
-  { path: 'history',             component: HistoryComponent,  canActivate: [authGuard] },
+  { path: 'history',           component: HistoryComponent,  canActivate: [authGuard] },
 
-  // 404 — catch-all must be last
+  // ── 404 ───────────────────────────────────────────────
   { path: '**', component: NotFoundComponent },
 ];

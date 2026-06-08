@@ -71,7 +71,7 @@
     </div>
 
     <p class="auth-switch">
-      <a routerLink="/login" class="auth-switch-link">Sign in instead</a>
+      <a [routerLink]="['/login']" [queryParams]="redirectUrl !== '/' ? {redirect: redirectUrl} : {}" class="auth-switch-link">Sign in instead</a>
     </p>
 
   </div>

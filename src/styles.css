@@ -509,50 +509,30 @@ body {
   padding: clamp(1.5rem, 5vw, 2.5rem) 0;
 }
 
-/* Tables & code scroll inside container, not page */
+/* Tables & code scroll inside container */
 .theme-code,
 .block-table-wrap,
 table {
   max-width: 100%;
 }
 
-/* Large desktop — comfortable max content width */
-@media (min-width: 1920px) {
-  .container {
-    max-width: 1400px;
-  }
-}
+/* Ensure images never overflow */
+img { max-width: 100%; height: auto; }
 
-/* Laptop */
-@media (min-width: 1366px) and (max-width: 1919px) {
-  .container {
-    max-width: 1200px;
-  }
-}
-
-/* Tablet landscape */
-@media (min-width: 1024px) and (max-width: 1365px) {
-  .container {
-    max-width: 960px;
-  }
-}
+/* Large desktop */
+@media (min-width: 1920px) { .container { max-width: 1400px; } }
+@media (min-width: 1366px) and (max-width: 1919px) { .container { max-width: 1200px; } }
+@media (min-width: 1024px) and (max-width: 1365px) { .container { max-width: 960px; } }
 
 /* Tablet portrait */
 @media (min-width: 768px) and (max-width: 1023px) {
-  .container {
-    max-width: 720px;
-  }
-
-  .page-section {
-    padding: 2rem 0;
-  }
+  .container { max-width: 720px; }
+  .page-section { padding: 2rem 0; }
 }
 
-/* Mobile */
+/* ── MOBILE (≤767px) ────────────────────────────────────── */
 @media (max-width: 767px) {
-  body {
-    font-size: 0.9375rem;
-  }
+  body { font-size: 0.9375rem; }
 
   .page-section {
     padding: 1.25rem 0;
@@ -573,70 +553,87 @@ table {
     padding-right: max(var(--app-gutter-mobile), env(safe-area-inset-right, 0px));
   }
 
-  /* Unified button sizing on mobile */
-  .btn-theme,
-  .btn.btn-theme {
+  /* Buttons */
+  .btn-theme, .btn.btn-theme {
     height: var(--btn-h);
     min-height: var(--btn-h);
-    max-height: var(--btn-h);
     padding: 0 16px !important;
     font-size: var(--btn-font);
     border-radius: var(--btn-radius);
   }
-
-  .btn-primary-lg,
-  .btn-ghost-lg {
-    height: var(--btn-h);
-    min-height: var(--btn-h);
-    padding: 0 18px;
-    font-size: var(--btn-font);
+  .btn-primary-lg, .btn-ghost-lg {
+    height: var(--btn-h); min-height: var(--btn-h);
+    padding: 0 18px; font-size: var(--btn-font);
   }
 
-  /* Inputs — consistent height */
-  .theme-input,
-  .form-control {
+  /* Inputs */
+  .theme-input, .form-control {
     min-height: var(--input-h) !important;
-    font-size: 16px !important; /* prevents iOS zoom */
+    font-size: 16px !important;
     border-radius: var(--btn-radius) !important;
   }
 
-  /* Input groups stay horizontal — compact action button */
-  .input-group .btn,
-  .search-input-group .btn {
-    height: var(--input-h);
-    min-height: var(--input-h);
-    width: auto !important;
-    min-width: 90px;
-    padding: 0 14px !important;
-    font-size: 13px;
-    flex-shrink: 0;
-    margin-top: 0 !important;
-  }
-
-  .input-group,
-  .search-input-group {
-    flex-direction: row !important;
-    gap: 0;
-  }
-
-  .input-group .form-control,
-  .search-input-group .form-control {
+  /* Input groups stay horizontal */
+  .input-group, .search-input-group { flex-direction: row !important; gap: 0; }
+  .input-group .form-control, .search-input-group .form-control {
     border-radius: var(--btn-radius) 0 0 var(--btn-radius) !important;
-    flex: 1;
-    min-width: 0;
+    flex: 1; min-width: 0;
   }
-
-  .input-group .btn,
-  .search-input-group .btn {
+  .input-group .btn, .search-input-group .btn {
+    height: var(--input-h); min-height: var(--input-h);
+    width: auto !important; min-width: 90px;
+    padding: 0 14px !important; font-size: 13px; flex-shrink: 0;
     border-radius: 0 var(--btn-radius) var(--btn-radius) 0 !important;
   }
 
+  /* Saved / history grids stack */
+  .row .col-md-4 { flex: 0 0 100% !important; max-width: 100% !important; }
+  .row .col-sm-6 { flex: 0 0 100% !important; max-width: 100% !important; }
+
+  /* History / saved page headers wrap */
+  .d-flex.justify-content-between { flex-wrap: wrap; gap: 10px; }
+
   /* Disable hover lift on touch */
-  .theme-card:hover,
-  .section-card:hover,
-  .btn-theme:hover,
-  .btn-primary-lg:hover,
-  .btn-ghost-lg:hover {
-    transform: none;
+  .theme-card:hover, .section-card:hover,
+  .btn-theme:hover, .btn-primary-lg:hover, .btn-ghost-lg:hover { transform: none; }
+
+  /* Tables scroll horizontally */
+  .def-table-wrap, .block-table-wrap { overflow-x: auto; }
+
+  /* Summarizer mode-tabs stack vertically on mobile */
+  .mode-tabs { flex-direction: column !important; }
+  .mode-tab { width: 100% !important; min-height: 44px; justify-content: center; }
+}
+
+/* ── TABLET (768–1024px) ─────────────────────────────────── */
+@media (min-width: 768px) and (max-width: 1023px) {
+  /* Saved/history: 2 columns */
+  .row .col-md-4 { flex: 0 0 50% !important; max-width: 50% !important; }
+
+  /* Mindmap layout: stack input + 2-col panels */
+  .mindmap-layout {
+    grid-template-columns: 1fr 1fr !important;
+    grid-template-rows: auto auto !important;
+    height: auto !important;
+  }
+  .mindmap-page {
+    height: auto !important;
+    overflow: auto !important;
+    min-height: calc(100vh - 64px);
+  }
+  .input-panel { grid-column: 1 / -1 !important; }
+  .def-panel   { grid-column: 1 / -1 !important; }
+  .input-panel, .tree-panel, .def-panel {
+    height: auto !important;
+    min-height: 300px;
+    max-height: none !important;
+  }
+  .tree-panel { min-height: 400px; }
+}
+
+/* ── SAFE AREA (iPhone notch / home bar) ─────────────────── */
+@supports (padding: max(0px)) {
+  .app-main {
+    padding-bottom: max(0px, env(safe-area-inset-bottom));
   }
 }
