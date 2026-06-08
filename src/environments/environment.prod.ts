@@ -4,7 +4,7 @@
  */
 export const environment = {
   production: true,
-  groqApiKey: "test",
-  geminiApiKeys: ["key1"],
-  youtubeApiKeys: ["key2"],
+  groqApiKey: '',
+  geminiApiKeys: [''],
+  youtubeApiKeys: [''],
 };

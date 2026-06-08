@@ -1,7 +1,7 @@
-/** Keys are injected at build time via Vercel environment variables */
+/** Auto-generated from .env — run: node scripts/sync-local-env.js */
 export const environment = {
   production: false,
-  groqApiKey: "",
-  geminiApiKeys: [""],
-  youtubeApiKeys: [""],
+  groqApiKey: '',
+  geminiApiKeys: [''],
+  youtubeApiKeys: [''],
 };
