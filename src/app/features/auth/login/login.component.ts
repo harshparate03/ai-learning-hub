@@ -25,9 +25,12 @@ export class LoginComponent {
     private router: Router,
     private route:  ActivatedRoute
   ) {
-    // If the guard saved a redirect URL, read it
+    // Validate redirect — must be a local path starting with /
     this.route.queryParams.subscribe(p => {
-      if (p['redirect']) this.redirectUrl = p['redirect'];
+      const raw = p['redirect'];
+      if (raw && typeof raw === 'string' && raw.startsWith('/') && !raw.startsWith('//')) {
+        this.redirectUrl = raw;
+      }
     });
 
     // Already logged in? Go straight to the destination

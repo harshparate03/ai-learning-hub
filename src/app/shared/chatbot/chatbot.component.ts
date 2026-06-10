@@ -6,7 +6,7 @@ import { sanitizeUserInput } from '../../core/utils/sanitize.util';
 import { parseChatContent, ChatBlock } from '../../core/utils/chat-format.util';
 import { AiSparkComponent } from '../ai-spark/ai-spark.component';
 import { LogoComponent } from '../logo/logo.component';
-import { jsPDF } from 'jspdf';
+import { PdfLine, PdfService } from '../../core/services/pdf.service';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -41,7 +41,7 @@ export class ChatbotComponent implements AfterViewChecked {
   errorMsg = '';
   private shouldScroll = false;
 
-  constructor(private ai: AiService) {}
+  constructor(private ai: AiService, private pdf: PdfService) {}
 
   parseMessage(text: string): ChatBlock[] {
     return parseChatContent(text);
@@ -109,34 +109,19 @@ export class ChatbotComponent implements AfterViewChecked {
 
   downloadPDF(): void {
     if (this.messages.length <= 1) return;
-    const doc = new jsPDF();
-    let y = 20;
-    const pageH = doc.internal.pageSize.height;
-    const addLine = (text: string, size: number, bold: boolean, color: number[]) => {
-      doc.setFontSize(size);
-      doc.setFont('helvetica', bold ? 'bold' : 'normal');
-      doc.setTextColor(color[0], color[1], color[2]);
-      const lines = doc.splitTextToSize(text, 175);
-      lines.forEach((line: string) => {
-        if (y > pageH - 15) { doc.addPage(); y = 20; }
-        doc.text(line, 15, y); y += 7;
-      });
-      y += 2;
-    };
-    addLine('AI Study Chat', 18, true, [99, 102, 241]);
-    addLine(new Date().toLocaleDateString(), 10, false, [120, 120, 120]);
-    y += 4;
-    this.messages.forEach(m => {
-      if (m.role === 'user') {
-        addLine('You:', 11, true, [99, 102, 241]);
-        addLine(m.content, 11, false, [30, 30, 30]);
-      } else {
-        addLine('AI Assistant:', 11, true, [16, 185, 129]);
-        addLine(m.content.replace(/[#*`_]/g, ''), 11, false, [40, 40, 40]);
-      }
-      y += 3;
-    });
-    doc.save('ai-study-chat.pdf');
+    const lines: PdfLine[] = this.messages.map(m => ({
+      type: m.role === 'user' ? 'chat-user' : 'chat-ai',
+      text: m.content.replace(/<[^>]*>/g, '').replace(/[#*`_]/g, '')
+    }));
+
+    const userMessages = this.messages.filter(m => m.role === 'user').length;
+    this.pdf.save(
+      'ai-study-chat.pdf',
+      'AI Study Chat',
+      `AI Chat Assistant · ${userMessages} messages`,
+      lines,
+      { template: 'chat' }
+    );
   }
 
   private scrollToBottom(): void {

@@ -93,10 +93,16 @@ export class YoutubeService {
   private get KEY(): string { return this.API_KEYS[this.keyIndex % this.API_KEYS.length]; }
   private get hasApiKey(): boolean { return this.API_KEYS.length > 0; }
 
-  private SEARCH_URL = 'https://www.googleapis.com/youtube/v3/search';
-  private VIDEO_URL  = 'https://www.googleapis.com/youtube/v3/videos';
+  private SEARCH_URL = '/api/youtube-search';
+  private VIDEO_URL  = '/api/youtube-details';
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient) {
+    // Initialize with YouTube API key from environment
+    if (environment.youtubeApiKey) {
+      this.API_KEYS = [environment.youtubeApiKey];
+      console.log('[YouTube Service] API key configured ✓');
+    }
+  }
 
   // ── SEARCH ────────────────────────────────────────────────────────────────
 
@@ -169,7 +175,7 @@ export class YoutubeService {
     }
 
     return this.http.get(this.SEARCH_URL, {
-      params: { part: 'snippet', q: safeQuery, type: 'video', maxResults: '12', key: this.KEY }
+      params: { q: safeQuery, type: 'video', maxResults: '12' }
     }).pipe(
       catchError((err) => {
         console.warn('[YouTube] Data API failed:', err?.status, err?.error?.error?.message);
@@ -228,30 +234,39 @@ export class YoutubeService {
   }
 
   private searchViaAIAndOEmbed(query: string, existingItems: any[]): Observable<any> {
-    const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+    const GROQ_PROXY_URL = '/api/groq';
     const GROQ_KEY = environment.groqApiKey;
 
     const existingIds = new Set(existingItems.map(v => v.id.videoId));
+    
+    // If no Groq key, return curated results only
+    if (!GROQ_KEY) {
+      return of({ items: existingItems, _source: 'curated' });
+    }
 
-    const prompt = `You are a YouTube video curator for students.
+    const prompt = `You are a comprehensive YouTube video search assistant.
 Search topic: "${query}"
 
-List 10 real, popular educational YouTube videos about "${query}".
-Only include videos from well-known edu channels: freeCodeCamp.org, Traversy Media, Programming with Mosh, 3Blue1Brown, CS50, MIT OpenCourseWare, Khan Academy, Corey Schafer, Fireship, NetworkChuck, Bro Code, Simplilearn, edureka, Academind, TechWorld with Nana, CodeWithHarry, Kunal Kushwaha.
+List 15 real, relevant YouTube videos about "${query}".
+Include videos from all popular educational and technical channels.
+Prioritize:
+1. Educational channels: freeCodeCamp.org, Traversy Media, Programming with Mosh, Khan Academy, MIT OpenCourseWare
+2. Tech influencers: Fireship, NetworkChuck, Corey Schafer, Academind, TechWorld with Nana
+3. Creator channels: Bro Code, CodeWithHarry, Kunal Kushwaha, 3Blue1Brown, Simplilearn
+4. Any other popular channel covering the topic
 Each video ID must be exactly 11 characters.
 
 Return ONLY a JSON array — no markdown, no explanation:
 [{"videoId":"EXACT_11_CHAR_ID","title":"Real Title","channel":"Channel Name"}]`;
 
     const body = {
-      model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+      model: 'llama-3.3-70b-versatile',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.1,
       max_tokens: 1000
     };
 
-    return this.http.post(GROQ_URL, body, {
-      headers: { 'Authorization': `Bearer ${GROQ_KEY}` },
+    return this.http.post(GROQ_PROXY_URL, body, {
       withCredentials: false
     }).pipe(
       switchMap((res: any) => {
@@ -265,7 +280,7 @@ Return ONLY a JSON array — no markdown, no explanation:
         // Filter: valid 11-char IDs, not already in curated list
         const toValidate = candidates
           .filter(c => c.videoId && /^[a-zA-Z0-9_\-]{11}$/.test(c.videoId) && !existingIds.has(c.videoId))
-          .slice(0, 10);
+          .slice(0, 15);
 
         if (!toValidate.length) {
           return of({ items: existingItems, _source: 'curated' });
@@ -311,13 +326,13 @@ Return ONLY a JSON array — no markdown, no explanation:
       return of({ items: [] });
     }
     return this.http.get(this.VIDEO_URL, {
-      params: { part: 'snippet,statistics,contentDetails', id: videoId, key: this.KEY }
+      params: { id: videoId, part: 'snippet,statistics,contentDetails' }
     }).pipe(
       catchError(() => {
         this.keyIndex++;
         if (!this.hasApiKey) return of({ items: [] });
         return this.http.get(this.VIDEO_URL, {
-          params: { part: 'snippet,statistics,contentDetails', id: videoId, key: this.KEY }
+          params: { id: videoId, part: 'snippet,statistics,contentDetails' }
         }).pipe(catchError(() => of({ items: [] })));
       })
     );

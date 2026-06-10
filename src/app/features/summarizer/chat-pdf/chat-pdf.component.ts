@@ -2,7 +2,8 @@ import { Component, ElementRef, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import * as pdfjsLib from 'pdfjs-dist';
-import { AiService } from '../../../core/services/ai.service';
+import { AiService, GroqChatMessage } from '../../../core/services/ai.service';
+import { PdfService, PdfLine } from '../../../core/services/pdf.service';
 import { jsPDF } from 'jspdf';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
@@ -29,7 +30,7 @@ export class ChatPdfComponent {
 
   messages: { role: 'user' | 'ai'; text: string; typing?: boolean }[] = [];
 
-  constructor(private aiService: AiService) {}
+  constructor(private aiService: AiService, private pdf: PdfService) {}
 
   /** Upload and parse PDF */
   async onFileSelected(event: any) {
@@ -261,59 +262,57 @@ export class ChatPdfComponent {
     this.messages.push({ role: 'ai', text: '', typing: true });
     this.scrollToBottom();
 
-    const prompt = `You are a helpful document assistant. Answer the question using ONLY the content from the document below.
+    const history: GroqChatMessage[] = this.messages
+      .filter(m => !m.typing)
+      .slice(-6)
+      .map(m => ({
+        role: m.role === 'user' ? 'user' as const : 'assistant' as const,
+        content: m.text.replace(/<[^>]*>/g, '').slice(0, 2000)
+      }));
 
-FORMATTING RULES (strictly follow):
-- Use ## for main section headings, ### for sub-headings
-- Use **bold** for key terms and important values
-- Use bullet points (- item) for lists of items, features, or facts
-- Use numbered lists (1. item) for steps, procedures, or ranked content
-- Use markdown tables (| Header | Header |) when the answer involves comparing items, showing data, figures, statistics, or structured information from the document
-- Use fenced code blocks (\`\`\`language ... \`\`\`) for any code, formulas, or structured data
-- Keep paragraphs short (2-3 sentences max)
-- Separate sections with a blank line
-- If the answer is not in the document, say exactly: "I couldn't find that in the document."
+    const docContext = `DOCUMENT CONTENT (answer ONLY from this):\n${this.pdfText.slice(0, 12000)}\n\nIf the answer is not in the document, say exactly: "I couldn't find that in the document."`;
 
-DOCUMENT CONTENT:
-${this.pdfText.slice(0, 12000)}
-
-QUESTION: ${q}
-
-Answer clearly and completely using proper formatting. Use a table if the data suits one.`;
-
-
-    this.aiService.generateWithGroq(prompt).subscribe({
-      next: (res: any) => {
-        const answer =
-          res?.choices?.[0]?.message?.content ||
-          res?.candidates?.[0]?.content?.parts?.[0]?.text ||
-          'Sorry, I could not generate a response.';
-
-        // Replace typing indicator with real answer
-        let typingIdx = -1;
-        for (let i = this.messages.length - 1; i >= 0; i--) {
-          if (this.messages[i].typing) { typingIdx = i; break; }
-        }
-        if (typingIdx !== -1) {
-          this.messages[typingIdx] = { role: 'ai', text: answer };
-        } else {
-          this.messages.push({ role: 'ai', text: answer });
-        }
-        this.loading = false;
-        this.scrollToBottom();
+    this.aiService.chatWithGroq([
+      { role: 'system', content: docContext },
+      ...history
+    ]).subscribe({
+      next: (answer: string) => {
+        this.replaceTypingMessage(answer || 'Sorry, I could not generate a response.');
       },
-      error: () => {
-        let typingIdx = -1;
-        for (let i = this.messages.length - 1; i >= 0; i--) {
-          if (this.messages[i].typing) { typingIdx = i; break; }
-        }
-        if (typingIdx !== -1) {
-          this.messages[typingIdx] = { role: 'ai', text: 'AI request failed. Please try again.' };
-        }
-        this.loading = false;
-        this.scrollToBottom();
+      error: (err: any) => {
+        console.error('[Chat PDF Error]', err);
+        this.replaceTypingMessage(this.aiService.proxyErrorMessage(err));
       }
     });
+  }
+
+  private replaceTypingMessage(text: string) {
+    let typingIdx = -1;
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      if (this.messages[i].typing) { typingIdx = i; break; }
+    }
+    if (typingIdx !== -1) {
+      this.messages[typingIdx] = { role: 'ai', text };
+    } else {
+      this.messages.push({ role: 'ai', text });
+    }
+    this.loading = false;
+    this.scrollToBottom();
+  }
+
+  private stripMarkdownForPdf(text: string): string {
+    return text
+      .replace(/```[\s\S]*?```/g, m => m.replace(/```\w*\n?/g, '').replace(/```/g, '').trim())
+      .replace(/^#{1,6}\s+/gm, '')
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/\*(.+?)\*/g, '$1')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/^\s*[-*+]\s+/gm, '• ')
+      .replace(/^\s*\d+\.\s+/gm, '')
+      .replace(/\|/g, ' ')
+      .replace(/<[^>]*>/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
   private scrollToBottom() {
@@ -333,24 +332,23 @@ Answer clearly and completely using proper formatting. Use a table if the data s
 
   downloadPDF() {
     if (!this.messages.length) return;
-    const doc = new jsPDF();
-    let y = 20;
-    const pageH = doc.internal.pageSize.height;
-    const addLine = (text: string, size: number, bold: boolean, color: number[]) => {
-      doc.setFontSize(size); doc.setFont('helvetica', bold ? 'bold' : 'normal');
-      doc.setTextColor(color[0], color[1], color[2]);
-      doc.splitTextToSize(text, 175).forEach((line: string) => {
-        if (y > pageH - 15) { doc.addPage(); y = 20; }
-        doc.text(line, 15, y); y += 7;
-      }); y += 2;
-    };
-    addLine(`Chat with PDF — ${this.fileName}`, 16, true, [99, 102, 241]);
-    addLine(new Date().toLocaleDateString(), 10, false, [120, 120, 120]); y += 4;
-    this.messages.forEach(m => {
-      addLine(m.role === 'user' ? 'You:' : 'AI Assistant:', 11, true, m.role === 'user' ? [99, 102, 241] : [16, 185, 129]);
-      addLine(m.text.replace(/<[^>]*>/g, '').replace(/[#*`_]/g, ''), 11, false, [40, 40, 40]); y += 3;
-    });
-    doc.save(`chat-${this.fileName.replace('.pdf', '') || 'document'}.pdf`);
+    const lines: PdfLine[] = [];
+
+    this.messages
+      .filter(m => !m.typing && m.text.trim())
+      .forEach(m => {
+        lines.push({
+          type: m.role === 'user' ? 'chat-user' : 'chat-ai',
+          text: this.stripMarkdownForPdf(m.text)
+        });
+      });
+
+    this.pdf.saveChat(
+      `chat-${this.fileName.replace('.pdf', '') || 'document'}.pdf`,
+      `AI Study Chat — ${this.fileName || 'Document'}`,
+      `${this.messages.filter(m => m.role === 'user').length} questions · ${new Date().toLocaleDateString()}`,
+      lines
+    );
   }
 
   saveChat() {

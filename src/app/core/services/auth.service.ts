@@ -34,6 +34,12 @@ export class AuthService {
 
   // ── Auth actions ──────────────────────────────────────────────────────────
 
+  /** Check if an email is already registered (used for better error messages in signup) */
+  isEmailTaken(email: string): boolean {
+    const emailLower = sanitizeEmail(email);
+    return this.getUsers().some(u => u.email === emailLower);
+  }
+
   signup(email: string, password: string): boolean {
     const emailLower = sanitizeEmail(email);
     const safePassword = sanitizeUserInput(password, MAX_PASSWORD_LEN);

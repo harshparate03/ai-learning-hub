@@ -91,22 +91,30 @@
         <div *ngIf="topics.length > 0">
 
           <!-- Download bar -->
-          <div *ngIf="!loading" class="download-bar">
-            <span class="download-label">Download Notes:</span>
-            <select class="form-select theme-input w-auto" [(ngModel)]="downloadFormat" style="min-width:120px;">
-              <option value="pdf">PDF</option>
-              <option value="docx">DOCX</option>
-              <option value="ppt">PPT</option>
-              <option value="txt">TXT</option>
-            </select>
-            <button class="btn btn-theme fw-bold px-4" (click)="download()">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              Download
-            </button>
-            <button class="btn btn-outline-secondary fw-bold px-3" (click)="saveToHistory()" style="font-size:13px;">
-              {{ savedMsg || '🔖 Save to History' }}
-            </button>
-            <span class="download-stats">{{ topics.length }} topics · {{ questions.length }} Q&A</span>
+          <div *ngIf="!loading" class="download-card">
+            <div class="download-card-left">
+              <div class="download-card-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              </div>
+              <div>
+                <div class="download-card-title">Download Notes</div>
+                <div class="download-card-meta">{{ topics.length }} topics &middot; {{ questions.length }} Q&amp;A</div>
+              </div>
+            </div>
+            <div class="download-card-actions">
+              <button class="dl-btn dl-btn-primary" (click)="downloadPDF()" title="Download as PDF">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                PDF
+              </button>
+              <button class="dl-btn dl-btn-ghost" (click)="downloadTXT()" title="Download as TXT">TXT</button>
+              <button class="dl-btn dl-btn-ghost" (click)="downloadDOCX()" title="Download as DOCX">DOCX</button>
+              <button class="dl-btn dl-btn-ghost" (click)="downloadPPT()" title="Download as PPT">PPT</button>
+              <div class="dl-divider"></div>
+              <button class="dl-btn dl-btn-save" (click)="saveToHistory()">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/></svg>
+                {{ savedMsg || 'Save' }}
+              </button>
+            </div>
           </div>
 
           <!-- Results header -->

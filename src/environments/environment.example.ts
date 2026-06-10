@@ -11,6 +11,5 @@
 export const environment = {
   production: false,
   groqApiKey: '',
-  geminiApiKeys: [''],
-  youtubeApiKeys: [''],
+  youtubeApiKey: '',
 };

@@ -7,7 +7,7 @@ import { YoutubeService } from '../../../core/services/youtube.service';
 import * as pdfjsLib from 'pdfjs-dist';
 import * as mammoth from 'mammoth';
 import JSZip from 'jszip';
-import { jsPDF } from 'jspdf';
+import { PdfLine, PdfService } from '../../../core/services/pdf.service';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
@@ -80,7 +80,7 @@ export class GenerateComponent implements OnInit {
 
   COLORS = ['#38bdf8','#34d399','#f472b6','#fb923c','#a78bfa','#facc15','#f87171','#4ade80','#22d3ee','#e879f9'];
 
-  constructor(private ai: AiService, private yt: YoutubeService) {}
+  constructor(private ai: AiService, private yt: YoutubeService, private pdf: PdfService) {}
 
   ngOnInit() {
     const s = localStorage.getItem('mindmaps');
@@ -264,12 +264,13 @@ export class GenerateComponent implements OnInit {
 
   // ── MAIN GENERATE ────────────────────────────────────────────────────────────
   async generate() {
-    if (!this.canGenerate) return;
+    if (!this.canGenerate || this.loading) return;
     this.loading = true;
     this.errorMsg = '';
     this.rootNode = null;
     this.selectedNode = null;
     this.currentVideoMeta = null;
+    this.progress = 'Starting...';
 
     try {
       if (this.inputMode === 'file' && this.fileContent) {
@@ -280,15 +281,14 @@ export class GenerateComponent implements OnInit {
         await this.generateSingleCall(sanitizeUserInput(this.textInput, 5000), false);
       }
     } catch (e: any) {
-      // Only set generic message if a more specific one wasn't already set
       if (!this.errorMsg) {
         console.error('[Generate Error]', e);
-        this.errorMsg = 'Generation failed. Please try again.';
+        this.errorMsg = this.ai.proxyErrorMessage(e);
       }
+    } finally {
+      this.progress = '';
+      this.loading = false;
     }
-
-    this.progress = '';
-    this.loading = false;
   }
 
   // ── FILE: TWO-PHASE GENERATION ───────────────────────────────────────────────
@@ -384,16 +384,76 @@ For all other text: extract headings, topics, subtopics exactly as they appear.`
 
   private async extractRootAndBranches(outline: string): Promise<{ rootLabel: string; rootDef: string; branches: string[] } | null> {
     try {
-      const res: any = await this.ai.generateWithGroq(
-        `From this document outline, identify the main subject and its primary top-level sections.\n\nOUTLINE:\n${outline.slice(0, 8000)}\n\nReturn ONLY valid JSON (no markdown, no code fences):\n{\n  "rootLabel": "Main Document Subject",\n  "rootDef": "2-sentence overview of what this document covers.",\n  "branches": ["Section 1", "Section 2", "Section 3"]\n}\n\nRules: rootLabel = main title/subject. branches = primary top-level sections exactly as in outline. 4-8 branches max. No invented names.`
-      ).toPromise();
-      const text = this.extractTextFromResponse(res);
-      if (!text) { console.error('[Branches Error] empty AI response'); return null; }
-      const json = this.extractJson(text);
-      if (!json) { console.error('[Branches Error] no JSON in response:', text.slice(0, 200)); return null; }
-      return JSON.parse(json);
+      // Simple text-based branch extraction (more reliable than Groq JSON parsing)
+      const lines = outline.split('\n').filter(l => l.trim().length > 0);
+      
+      // Find root label: first substantial line
+      const rootLabel = lines.find(l => l.length > 5 && !l.startsWith('##')) || 'Document';
+      
+      // Extract section headers (lines starting with # or all-caps or numbered)
+      const branches: string[] = [];
+      const seen = new Set<string>();
+      
+      for (const line of lines) {
+        let section = line.trim();
+        
+        // Strip markdown headers
+        section = section.replace(/^#+\s+/, '').trim();
+        
+        // Filter: skip empty, keep if 3-50 chars and looks like a heading
+        if (section.length >= 3 && section.length <= 50) {
+          const lower = section.toLowerCase();
+          
+          // Skip common non-heading patterns
+          if (lower.includes('table') || lower.includes('figure') || lower.includes('page')) {
+            continue;
+          }
+          
+          // Likely a heading if: all caps, starts with number, multiple words, or short sentence
+          const isHeading = /^[A-Z\s\d]+$/.test(section) || // all caps
+                           /^\d+\./.test(section) ||          // numbered
+                           section.split(' ').length <= 5;     // short phrase
+          
+          if (isHeading && !seen.has(lower)) {
+            branches.push(section);
+            seen.add(lower);
+          }
+        }
+      }
+      
+      // If we found < 3 branches, ask Groq for suggestions (minimal JSON)
+      if (branches.length < 3) {
+        try {
+          const res: any = await this.ai.generateWithGroq(
+            `List 5 main topics from this document in a simple format:\n\n${outline.slice(0, 3000)}\n\nRespond with one topic per line, no numbers or bullets.`
+          ).toPromise();
+          const suggestions = this.extractTextFromResponse(res)
+            ?.split('\n')
+            ?.map(t => t.replace(/^[\d\.\-•]\s+/, '').trim())
+            ?.filter(t => t.length > 3 && t.length < 50) || [];
+          branches.push(...suggestions.slice(0, 5 - branches.length));
+        } catch (e) {
+          console.warn('[Fallback Topics] Using text-based extraction only');
+        }
+      }
+      
+      // Ensure we have at least 2 branches
+      if (branches.length < 2) {
+        branches.push('Overview', 'Details', 'Conclusion');
+      }
+      
+      // Limit to 8 branches
+      const uniqueBranches = Array.from(new Set(branches.map(b => b.toLowerCase())))
+        .slice(0, 8)
+        .map(b => branches.find(br => br.toLowerCase() === b)!);
+      
+      return {
+        rootLabel: rootLabel.slice(0, 50),
+        rootDef: rootLabel,
+        branches: uniqueBranches
+      };
     } catch (e) {
-      console.error('[Branches Parse Error]', e);
+      console.error('[Branches Extract Error]', e);
       return null;
     }
   }
@@ -413,6 +473,13 @@ For all other text: extract headings, topics, subtopics exactly as they appear.`
 
   private async buildBranchSubtree(branchName: string, section: string, colorIdx: number, rootLabel: string): Promise<MindNode> {
     const color = this.COLORS[colorIdx % this.COLORS.length];
+    
+    // Early exit for empty sections
+    if (!section || section.trim().length < 20) {
+      console.warn(`[Empty Section] Branch "${branchName}" has insufficient content (${section?.length || 0} chars)`);
+      return { id: `branch_${colorIdx}_${Math.random().toString(36).slice(2)}`, label: branchName, level: 1, definition: '', children: [], color, expanded: false };
+    }
+    
     const hasTable = section.includes('[TABLE_START]');
     const hasSlide = section.includes('[SLIDE');
     const cleanSection = section.replace(/\[TABLE_START\]/g, '\n[TABLE]\n').replace(/\[TABLE_END\]/g, '\n[/TABLE]\n');
@@ -465,9 +532,13 @@ Return ONLY valid JSON (no markdown, no code fences):
       const text = this.extractTextFromResponse(res);
       const json = this.extractJson(text);
       if (!json) throw new Error('no JSON in branch response');
-      return this.initNodeWithColor(JSON.parse(json), color, `branch_${colorIdx}`);
-    } catch (e) {
-      console.error(`[Branch Build Error] "${branchName}":`, e);
+      const parsed = JSON.parse(json);
+      if (!parsed.label) throw new Error('missing label in parsed JSON');
+      return this.initNodeWithColor(parsed, color, `branch_${colorIdx}`);
+    } catch (e: any) {
+      const errorMsg = (e as any)?.message || String(e);
+      console.error(`[Branch Build Error] "${branchName}": ${errorMsg}`);
+      // Return node with at least basic structure
       return { id: `branch_${colorIdx}_${Math.random().toString(36).slice(2)}`, label: branchName, level: 1, definition: '', children: [], color, expanded: false };
     }
   }
@@ -533,28 +604,91 @@ The JSON must follow this exact shape:
     try {
       res = await this.ai.generateWithGroq(prompt).toPromise();
     } catch (e: any) {
-      const status = e?.status;
-      const msg = e?.error?.error?.message || e?.message || '';
-      console.error('[AI Request Failed]', status, msg);
-      if (status === 401 || status === 403) {
-        this.errorMsg = 'API key is invalid or expired. Please update the API key in ai.service.ts.';
-      } else if (status === 429) {
-        this.errorMsg = 'Rate limit reached. Please wait a moment and try again.';
-      } else if (status === 0 || status === undefined) {
-        this.errorMsg = 'Network error — check your internet connection and try again.';
-      } else {
-        this.errorMsg = `AI service error (${status || 'unknown'}). Please try again.`;
-      }
+      console.error('[AI Request Failed]', e);
+      this.errorMsg = this.ai.proxyErrorMessage(e);
       return;
     }
 
     const text = this.extractTextFromResponse(res);
-    if (!text) {
-      console.error('[AI] Empty response received:', JSON.stringify(res).slice(0, 200));
-      this.errorMsg = 'AI returned an empty response. Please try again.';
+    if (!text || this.ai.isDemoFallback(text)) {
+      this.errorMsg = this.ai.proxyErrorMessage({ status: 0 });
       return;
     }
     this.parseRoot(text);
+  }
+
+  /** Generate a demo mind map with proper structure when API fails */
+  private generateDemoMindmap(rootLabel: string): string {
+    return JSON.stringify({
+      root: {
+        id: 'root',
+        label: rootLabel || 'Main Topic',
+        level: 0,
+        definition: `This is a demonstration mind map showing how ${rootLabel || 'your topic'} can be structured hierarchically. The structure demonstrates the relationship between main concepts and their supporting details.`,
+        children: [
+          {
+            id: 'b1',
+            label: 'Core Concepts',
+            level: 1,
+            definition: 'The fundamental principles and foundational ideas that form the basis of this topic. Understanding these core concepts is essential for mastery.',
+            children: [
+              {
+                id: 'b1a',
+                label: 'Concept 1',
+                level: 2,
+                definition: 'The first major concept that builds the foundation. This concept introduces key terminology and establishes the basic framework.',
+                children: [
+                  {
+                    id: 'b1a1',
+                    label: 'Detail & Application',
+                    level: 3,
+                    definition: 'Specific details and real-world applications of this concept. This shows how the concept is used in practice.',
+                    children: []
+                  }
+                ]
+              },
+              {
+                id: 'b1b',
+                label: 'Concept 2',
+                level: 2,
+                definition: 'The second important concept that extends the foundation. This builds upon the first concept.',
+                children: []
+              }
+            ]
+          },
+          {
+            id: 'b2',
+            label: 'Practical Applications',
+            level: 1,
+            definition: 'Real-world examples and practical uses of the concepts. This section bridges theory and practice with concrete applications.',
+            children: [
+              {
+                id: 'b2a',
+                label: 'Use Case 1',
+                level: 2,
+                definition: 'A specific practical application demonstrating how these concepts are used in real scenarios.',
+                children: []
+              }
+            ]
+          },
+          {
+            id: 'b3',
+            label: 'Advanced Topics',
+            level: 1,
+            definition: 'More complex ideas and advanced understanding that build upon the core concepts. These topics represent deeper levels of expertise.',
+            children: [
+              {
+                id: 'b3a',
+                label: 'Advanced Concept',
+                level: 2,
+                definition: 'Higher-level ideas that incorporate multiple concepts working together.',
+                children: []
+              }
+            ]
+          }
+        ]
+      }
+    });
   }
 
   // ── TOGGLE / SELECT ──────────────────────────────────────────────────────────
@@ -564,6 +698,7 @@ The JSON must follow this exact shape:
   }
 
   async selectNode(node: MindNode) {
+    if (this.loadingDefinition) return;
     this.selectedNode = node;
     if (node.definition && node.definition.trim().length >= 40) return;
 
@@ -604,7 +739,7 @@ Only use information from the video data above.`;
         node.definition = this.extractTextFromResponse(res) || 'No definition available.';
       } catch (e) {
         console.error('[YouTube Definition Error]', e);
-        node.definition = 'Could not load definition.';
+        node.definition = this.ai.proxyErrorMessage(e);
       }
       this.loadingDefinition = false;
       return;
@@ -621,9 +756,9 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
     try {
       const res: any = await this.ai.generateWithGroq(prompt).toPromise();
       node.definition = this.extractTextFromResponse(res) || 'No definition available.';
-    } catch (e) {
+    } catch (e: any) {
       console.error('[Definition Error]', e);
-      node.definition = 'Could not load definition.';
+      node.definition = this.ai.proxyErrorMessage(e);
     }
     this.loadingDefinition = false;
   }
@@ -648,7 +783,7 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
   }
 
   /** Extract the first valid JSON object from AI text output.
-   *  Handles: ```json fences, bare JSON, JSON with trailing text. */
+   *  Handles: ```json fences, bare JSON, JSON with trailing text, incomplete JSON. */
   private extractJson(text: string): string | null {
     if (!text) return null;
 
@@ -666,6 +801,7 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
     let depth = 0;
     let inString = false;
     let escape = false;
+    let foundEnd = false;
     for (let i = start; i < text.length; i++) {
       const ch = text[i];
       if (escape) { escape = false; continue; }
@@ -678,12 +814,23 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
         if (depth === 0) {
           const candidate = text.slice(start, i + 1);
           try { JSON.parse(candidate); return candidate; } catch {}
+          foundEnd = true;
           break;
         }
       }
     }
+    
+    // 3. Try to fix incomplete JSON by finding all {...} patterns
+    if (!foundEnd) {
+      const allMatches = text.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g);
+      if (allMatches) {
+        for (const match of allMatches) {
+          try { JSON.parse(match); return match; } catch {}
+        }
+      }
+    }
 
-    // 3. Last resort — try the whole text trimmed
+    // 4. Last resort — try the whole text trimmed
     const trimmed = text.trim();
     try { JSON.parse(trimmed); return trimmed; } catch {}
 
@@ -721,15 +868,41 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
     return this.initNodeWithColor(raw, raw.level === 0 ? '#38bdf8' : this.COLORS[colorIdx % this.COLORS.length], 'root');
   }
 
+  /** Comprehensive markdown cleaning for labels and definitions */
+  private cleanMarkdown(text: string): string {
+    return (text || '')
+      // Remove markdown headers (#### heading → heading)
+      .replace(/^#{1,6}\s+/gm, '')
+      // Remove bold/italic markers (handle all variations, greedy)
+      .replace(/\*\*\*(.+?)\*\*\*/g, '$1')
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      // Remove list item bullets and asterisks at start of lines
+      .replace(/^\s*[-*+]\s+/gm, '')
+      // Remove remaining emphasis asterisks/underscores (non-greedy)
+      .replace(/[*_]([^*_]+)[*_]/g, '$1')
+      // Remove code blocks and inline code
+      .replace(/`{3}[\s\S]*?`{3}/g, '')
+      .replace(/`([^`]+)`/g, '$1')
+      // Remove blockquotes
+      .replace(/^>\s+/gm, '')
+      // Remove strikethrough
+      .replace(/~~(.+?)~~/g, '$1')
+      // Remove HTML tags if any
+      .replace(/<[^>]+>/g, '')
+      // Clean up multiple spaces
+      .replace(/\s{2,}/g, ' ')
+      // Trim
+      .trim();
+  }
+
   private initNodeWithColor(raw: any, color: string, parentId = ''): MindNode {
-    const cleanLabel = (raw.label || '')
-      .replace(/^#{1,6}\s+/, '')
-      .replace(/\*\*/g, '').replace(/\*/g, '').replace(/_/g, '').trim();
+    const cleanLabel = this.cleanMarkdown(raw.label || '');
+    const cleanDef = this.cleanMarkdown(raw.definition || '');
     const node: MindNode = {
       id: `${parentId}_${cleanLabel.replace(/\s+/g, '_').slice(0, 20)}_${Math.random().toString(36).slice(2, 6)}`,
       label: cleanLabel,
       level: raw.level ?? 0,
-      definition: raw.definition || '',
+      definition: cleanDef,
       children: [],
       color,
       expanded: false
@@ -787,19 +960,25 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
 
     const flushTable = () => {
       if (tableLines.length >= 2) {
+        // Parse table: extract ALL rows (header + data) without filtering
         const rows = tableLines
           .map(l => l.split('|')
             .map(c => this.renderMarkdown(c.trim()))
             .filter((c, i, a) => !(i === 0 && c === '') && !(i === a.length - 1 && c === ''))
           )
-          .filter(r => r.length > 0 && !r.every(c => /^[-:]+$/.test(c)));
+          // Keep ALL valid rows - only filter separator rows (------)
+          .filter(r => r.length > 0 && !r.every(c => /^[-:=_\s]+$/.test(c)));
+        
+        // Only push if we have at least header + 1 data row
         if (rows.length >= 2) {
           flushPara();
           blocks.push({ type: 'table', content: '', rows });
         } else {
+          // Not enough rows for a table - treat as paragraph
           paraLines.push(...tableLines);
         }
       } else {
+        // Less than 2 lines - treat as paragraph
         paraLines.push(...tableLines);
       }
       tableLines = [];
@@ -881,21 +1060,11 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
   }
 
   private renderMarkdown(text: string): string {
-    return text
-      .replace(/^#{1,6}\s+/gm, '')
-      .replace(/\*\*\*(.+?)\*\*\*/g, '$1')
-      .replace(/\*\*(.+?)\*\*/g, '$1')
-      .replace(/\*(.+?)\*/g, '$1')
-      .replace(/_{2}(.+?)_{2}/g, '$1')
-      .replace(/_(.+?)_/g, '$1')
-      .replace(/`{3}[\s\S]*?`{3}/g, '')
-      .replace(/`(.+?)`/g, '$1')
-      .replace(/^[-*+]\s+/gm, '')
-      .replace(/^\d+\.\s+/gm, '')
-      .replace(/^>\s+/gm, '')
+    return this.cleanMarkdown(text)
+      // Also handle links [text](url) → text and ![alt](url) → [image]
       .replace(/\[(.+?)\]\(.+?\)/g, '$1')
-      .replace(/!\[.*?\]\(.*?\)/g, '')
-      .replace(/~~(.+?)~~/g, '$1')
+      .replace(/!\[.*?\]\(.*?\)/g, '[image]')
+      // Clean up multiple newlines
       .replace(/\n{3,}/g, '\n\n')
       .trim();
   }
@@ -935,33 +1104,75 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
   }
 
   downloadPDF() {
-    if (!this.rootNode) return;
-    const doc = new jsPDF();
-    let y = 20;
-    const pageH = doc.internal.pageSize.height;
-    const add = (text: string, size: number, bold: boolean, color: number[], indent = 15) => {
-      doc.setFontSize(size);
-      doc.setFont('helvetica', bold ? 'bold' : 'normal');
-      doc.setTextColor(color[0], color[1], color[2]);
-      doc.splitTextToSize(text, 180 - indent).forEach((l: string) => {
-        if (y > pageH - 15) { doc.addPage(); y = 20; }
-        doc.text(l, indent, y); y += 7;
-      }); y += 2;
-    };
-    add(this.rootNode.label, 18, true, [99, 102, 241]);
-    add(`Mind Map · ${new Date().toLocaleDateString()}`, 10, false, [120, 120, 120]); y += 4;
-    if (this.rootNode.definition) add(this.rootNode.definition, 11, false, [60, 60, 60]);
-    y += 4;
+    // Only export the currently selected node, or root if nothing selected
+    const nodeToExport = this.selectedNode || this.rootNode;
+    if (!nodeToExport) return;
+
+    const lines: PdfLine[] = [];
+
+    // Add node definition if present
+    if (nodeToExport.definition && nodeToExport.definition.trim().length > 0) {
+      lines.push({ type: 'para', text: nodeToExport.definition });
+      lines.push({ type: 'divider' });
+    }
+
     const renderNode = (node: MindNode, depth: number) => {
-      const indent = 15 + depth * 8;
-      const size = depth === 0 ? 13 : depth === 1 ? 12 : 11;
-      const color: number[] = depth === 0 ? [50, 50, 180] : depth === 1 ? [70, 70, 70] : [90, 90, 90];
-      add(`${'  '.repeat(depth)}• ${node.label}`, size, depth <= 1, color, indent);
-      if (node.definition) add(node.definition, 10, false, [100, 100, 100], indent + 4);
-      node.children.forEach(c => renderNode(c, depth + 1));
+      // Render node label based on depth - NO BULLETS, only headings and paragraphs
+      if (depth === 0) {
+        lines.push({ type: 'heading', text: node.label });
+      } else if (depth === 1) {
+        lines.push({ type: 'subheading', text: node.label });
+      } else {
+        // Use subheading for all nested levels instead of bullets
+        lines.push({ type: 'subheading', text: node.label });
+      }
+
+      // Add COMPLETE definition content including all block types
+      if (node.definition && node.definition.trim().length > 0) {
+        const defBlocks = this.parseDefinition(node.definition);
+        for (const block of defBlocks) {
+          if (block.type === 'para') {
+            lines.push({ type: 'para', text: block.content });
+          } else if (block.type === 'heading') {
+            lines.push({ type: 'subheading', text: block.content });
+          } else if (block.type === 'list' && block.items) {
+            // Convert list items to paragraphs instead of bullets
+            block.items.forEach(item => {
+              lines.push({ type: 'para', text: item });
+            });
+          } else if (block.type === 'table' && block.rows && block.rows.length >= 2) {
+            // Export COMPLETE table with ALL rows (no truncation)
+            lines.push({ type: 'table', rows: block.rows });
+          } else if (block.type === 'code') {
+            lines.push({ type: 'code', text: block.content, label: 'code' });
+          } else if (block.type === 'divider') {
+            lines.push({ type: 'divider' });
+          }
+        }
+      }
+
+      // Recursively render ALL children (ensure no branches are skipped)
+      if (node.children && node.children.length > 0) {
+        node.children.forEach(c => renderNode(c, depth + 1));
+      }
     };
-    this.rootNode.children.forEach(b => renderNode(b, 0));
-    doc.save(`${this.rootNode.label.replace(/\s+/g, '-').toLowerCase()}-mindmap.pdf`);
+
+    // Render selected node or root (starting depth 0 for the main node being exported)
+    renderNode(nodeToExport, 0);
+
+    // Generate filename based on selected node
+    const nodeLabel = nodeToExport.label.replace(/\s+/g, '-').toLowerCase();
+    const subtitle = this.currentVideoMeta?.title
+      ? `${nodeLabel} · ${this.currentVideoMeta.channel || 'YouTube'}`
+      : `${nodeLabel} · ${new Date().toLocaleDateString()}`;
+    
+    this.pdf.save(
+      `${nodeLabel}.pdf`,
+      nodeToExport.label,
+      subtitle,
+      lines,
+      { template: 'study' }
+    );
   }
 
   loadSaved(map: any) {

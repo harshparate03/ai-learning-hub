@@ -216,14 +216,29 @@
           </button>
           <button *ngIf="isTechTopic && isStudyRelated" class="ai-btn ai-btn-visual" [class.active]="activeAITab==='visual'" [disabled]="loadingAI" (click)="generateAI('visual')">Code + Visuals</button>
           <button class="ai-btn" [class.active]="activeAITab==='quiz'" [disabled]="loadingAI || !isStudyRelated" (click)="generateAI('quiz')">Quiz</button>
-          <button *ngIf="summaryBlocks.length || notesBlocks.length || visualBlocks.length || keyPoints.length || quiz.length"
-            class="ai-btn ai-btn-download" (click)="saveNotes()">⬇ Download MD</button>
-          <button *ngIf="summaryBlocks.length || notesBlocks.length || visualBlocks.length || keyPoints.length || quiz.length"
-            class="ai-btn ai-btn-download" (click)="downloadPDF()">⬇ Download PDF</button>
-          <button *ngIf="summaryBlocks.length || notesBlocks.length || visualBlocks.length || keyPoints.length || quiz.length"
-            class="ai-btn ai-btn-save" (click)="saveToHistory()">
-            {{ savedMsg || '🔖 Save' }}
-          </button>
+
+          <!-- Download Panel -->
+          <div *ngIf="summaryBlocks.length || notesBlocks.length || visualBlocks.length || keyPoints.length || quiz.length"
+            class="yt-download-panel">
+            <div class="yt-download-panel-header">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Download Active Tab
+            </div>
+            <div class="yt-download-btns">
+              <button class="yt-dl-btn yt-dl-primary" (click)="downloadPDF()" title="Download current tab as PDF">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                PDF
+              </button>
+              <button class="yt-dl-btn yt-dl-ghost" (click)="saveNotes()" title="Export Notes as file">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                Export Notes
+              </button>
+              <button class="yt-dl-btn yt-dl-save" (click)="saveToHistory()">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/></svg>
+                {{ savedMsg || 'Save' }}
+              </button>
+            </div>
+          </div>
         </div>
 
         <div *ngIf="errorMsg" class="alert alert-danger py-2 small mt-2">{{ errorMsg }}</div>

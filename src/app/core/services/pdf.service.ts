@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { jsPDF } from 'jspdf';
-import { BRAND_LOGO_B64 } from './brand-logo-b64';
+import { BRAND_LOGO_B64, BRAND_LOGO_FORMAT, BRAND_LOGO_HEIGHT, BRAND_LOGO_WIDTH } from './brand-logo-b64';
 
 // ─── Palette ────────────────────────────────────────────────────────────────
 const C = {
@@ -45,7 +45,12 @@ export interface PdfLine {
   rows?: string[][];
   label?: string;
   state?: string;
-  bulletStyle?: 'dot' | 'arrow' | 'star' | 'square' | 'hollow';
+  level?: number;  // Nesting level for hierarchy-based bullet styling (1=main, 2=sub, 3=detail, etc.)
+  bulletStyle?:
+    'dot' | 'square' | 'solid-square' | 'hollow' | 'hollow-circle' | 'hollow-square' |
+    'em-dash' | 'en-dash' | 'triangle' | 'large-square' |
+    'chevron' | 'double-chevron' | 'arrow' | 'diamond' |
+    'checkmark' | 'crossmark' | 'star' | 'sparkle';
 }
 
 @Injectable({ providedIn: 'root' })
@@ -63,20 +68,22 @@ export class PdfService {
   private readonly ML  = 15;
   private readonly MR  = 15;
   private readonly CW  = 180;
-  private readonly BTM = 272;
+  private readonly BTM = 285;
 
   // ─── Public API ───────────────────────────────────────────────────────────
 
-  save(filename: string, title: string, subtitle: string, lines: PdfLine[], options?: { template: 'chat' | 'study' }) {
+  async save(filename: string, title: string, subtitle: string, lines: PdfLine[], options?: { template: 'chat' | 'study' }) {
     const isChat = options?.template === 'chat';
-    this.build(title, subtitle, lines, isChat).save(filename);
+    await this.build(title, subtitle, lines, isChat);
+    this.doc.save(filename);
   }
 
-  saveChat(filename: string, title: string, subtitle: string, lines: PdfLine[]) {
-    this.build(title, subtitle, lines, true).save(filename);
+  async saveChat(filename: string, title: string, subtitle: string, lines: PdfLine[]) {
+    await this.build(title, subtitle, lines, true);
+    this.doc.save(filename);
   }
 
-  build(title: string, subtitle: string, lines: PdfLine[], chat = false): jsPDF {
+  async build(title: string, subtitle: string, lines: PdfLine[], chat = false): Promise<jsPDF> {
     this.doc      = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
     this.pn       = 1;
     this.docTitle = title;
@@ -118,7 +125,7 @@ export class PdfService {
     // Date right
     d.setFont('helvetica', 'normal');
     d.setFontSize(8);
-    d.setTextColor(...v(C.textM));
+    d.setTextColor(...v(C.textB));
     const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
     d.text(date, this.W - this.MR, 16.8, { align: 'right' });
 
@@ -173,13 +180,13 @@ export class PdfService {
     this.drawBrandLogo(this.ML + 4, 14, 52, 9);
     d.setFont('helvetica', 'normal');
     d.setFontSize(7.5);
-    d.setTextColor(...v(C.textM));
+    d.setTextColor(...v(C.textB));
     d.text('AI Study Chat · Conversation Export', this.ML + 4, 28);
 
     // Date right
     d.setFont('helvetica', 'normal');
     d.setFontSize(7.5);
-    d.setTextColor(...v(C.textM));
+    d.setTextColor(...v(C.textB));
     d.text(new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), this.W - this.MR - 5, 27, { align: 'right' });
 
     // Title
@@ -237,7 +244,7 @@ export class PdfService {
     // Doc title center
     d.setFont('helvetica', 'normal');
     d.setFontSize(7.5);
-    d.setTextColor(...v(C.textM));
+    d.setTextColor(...v(C.textB));
     d.text(this.clean(this.docTitle).slice(0, 56), this.W / 2, 11, { align: 'center' });
 
     // Right label for chat
@@ -283,15 +290,22 @@ export class PdfService {
     d.text(`Page ${page} / ${total}`, this.W - this.MR, fy, { align: 'right' });
   }
 
-  // ─── Brand logo image (bg_remove_logo.jpeg) ───────────────────────────────
+  // ─── Brand logo (transparent PNG, natural aspect ratio) ───────────────────
 
-  private drawBrandLogo(x: number, y: number, w: number, h: number) {
+  private drawBrandLogo(x: number, y: number, maxW: number, maxH: number) {
+    const ar = BRAND_LOGO_WIDTH / BRAND_LOGO_HEIGHT;
+    let w = maxW;
+    let h = w / ar;
+    if (h > maxH) {
+      h = maxH;
+      w = h * ar;
+    }
+    const dy = y + (maxH - h) / 2;
     try {
-      this.doc.addImage(BRAND_LOGO_B64, 'JPEG', x, y, w, h);
+      this.doc.addImage(BRAND_LOGO_B64, BRAND_LOGO_FORMAT, x, dy, w, h);
     } catch {
-      // fallback: small indigo mark if image fails
       this.doc.setFillColor(...v(C.indigo));
-      this.doc.roundedRect(x, y, h, h, 1.5, 1.5, 'F');
+      this.doc.roundedRect(x, dy, h, h, 1.5, 1.5, 'F');
     }
   }
 
@@ -327,7 +341,7 @@ export class PdfService {
       case 'heading':    this.heading(ln.text!); break;
       case 'subheading': this.subheading(ln.text!); break;
       case 'para':       this.para(ln.text!); break;
-      case 'bullet':     this.bullet(ln.text!, ln.bulletStyle); break;
+      case 'bullet':     this.bullet(ln.text!, ln.bulletStyle, ln.level); break;
       case 'definition': this.definition(ln.term!, ln.def!); break;
       case 'code':       this.code(ln.text!, ln.label); break;
       case 'table':      if (ln.rows?.length) this.table(ln.rows); break;
@@ -366,7 +380,7 @@ export class PdfService {
     d.setTextColor(...v(C.indigoDk));
     const ty = this.y + 7;
     ls.forEach((l: string, i: number) => d.text(l, this.ML + 9, ty + i * 7));
-    this.y += bh + 6;
+    this.y += bh + 5;
   }
 
   private subheading(text: string) {
@@ -403,57 +417,37 @@ export class PdfService {
     this.y += 2;
   }
 
-  private bullet(text: string, style?: string) {
-    const d    = this.doc;
-    const ls   = d.splitTextToSize(this.clean(text), this.CW - 12);
-    const lnH  = 5.6;
-    this.need(ls.length * lnH + 4);
+  private bullet(text: string, style?: string, level?: number) {
+    const d   = this.doc;
+    
+    // Simplified bullet symbols - only using proven reliable characters
+    const getBulletSymbol = (lv?: number): string => {
+      if (lv === 1) return '•';      // Main level: bullet
+      if (lv === 2) return '–';      // Sub level: en-dash
+      if (lv === 3) return '◦';      // Detail level: hollow circle
+      return '•';                    // Default: bullet
+    };
+    
+    const bulletSymbol = getBulletSymbol(level);
+    
+    // Clean text and split to fit
+    const cleanText = this.clean(text);
+    const ls  = d.splitTextToSize(cleanText, this.CW - 12);
+    const lnH = 5.6;
+    this.need(ls.length * lnH + 2);
 
-    const cx = this.ML + 3.2;
-    const cy = this.y + 3.5;
-
-    d.setDrawColor(...v(C.indigo));
-    d.setLineWidth(0.5);
-
-    switch (style) {
-      case 'arrow':
-        // Solid right-pointing triangle
-        d.setFillColor(...v(C.indigo));
-        d.triangle(cx - 2, cy - 2.2, cx - 2, cy + 2.2, cx + 2, cy, 'F');
-        break;
-      case 'star':
-        // Outer purple filled circle with white inner dot
-        d.setFillColor(...v(C.purple));
-        d.circle(cx, cy, 2.3, 'F');
-        d.setFillColor(...v(C.white));
-        d.circle(cx, cy, 0.9, 'F');
-        break;
-      case 'square':
-        // Solid indigo square
-        d.setFillColor(...v(C.indigo));
-        d.rect(cx - 1.8, cy - 1.8, 3.6, 3.6, 'F');
-        break;
-      case 'hollow':
-        // Hollow circle outline
-        d.setFillColor(...v(C.white));
-        d.circle(cx, cy, 1.8, 'FD');
-        d.setDrawColor(...v(C.indigo));
-        d.circle(cx, cy, 1.8, 'S');
-        break;
-      default:
-        // Solid filled circle
-        d.setFillColor(...v(C.indigo));
-        d.circle(cx, cy, 1.6, 'F');
-    }
-
+    // Render bullet symbol
     d.setFont('helvetica', 'normal');
     d.setFontSize(10);
     d.setTextColor(...v(C.textB));
+    d.text(bulletSymbol, this.ML + 2, this.y + 3.8);
+
+    // Render text lines
     ls.forEach((l: string, i: number) => {
       this.need(lnH);
-      d.text(l, this.ML + 9, this.y + 4 + i * lnH);
+      d.text(l, this.ML + 8, this.y + 3.8 + i * lnH);
     });
-    this.y += ls.length * lnH + 1.5;
+    this.y += ls.length * lnH + 0.3;
   }
 
   private definition(term: string, def: string) {
@@ -487,92 +481,166 @@ export class PdfService {
   private code(src: string, lang?: string) {
     const d     = this.doc;
     const lines = src.split('\n');
-    const vis   = lines.slice(0, 28);
-    const extra = lines.length - 28;
     const hasH  = !!(lang && lang !== 'code' && lang !== 'ascii');
-    const boxH  = Math.min(vis.length * 4.8 + (hasH ? 12 : 7) + 4, 90);
-    this.need(Math.min(boxH + 6, 55));
-
-    const bx = this.ML, by = this.y;
-    d.setFillColor(...v(C.codeBg));
-    d.roundedRect(bx, by, this.CW, boxH, 3, 3, 'F');
-    d.setDrawColor(48, 54, 61); d.setLineWidth(0.3);
-    d.roundedRect(bx, by, this.CW, boxH, 3, 3, 'S');
-
-    let ty = by;
-    if (hasH) {
-      d.setFillColor(...v(C.codeHdr));
-      d.roundedRect(bx, by, this.CW, 9, 3, 3, 'F');
-      d.rect(bx, by + 4, this.CW, 5, 'F');
-      ([[6, C.red], [11, C.amber], [16, C.green]] as [number, RGB][]).forEach(([dx, col]) => {
-        d.setFillColor(...v(col)); d.circle(bx + dx, by + 4.5, 1.5, 'F');
+    
+    // NEW: Split code across pages to show ALL content (not just first 28 lines)
+    const maxLinesPerPage = 35;  // Fit multiple code blocks per page
+    let startIdx = 0;
+    let isFirstBlock = true;
+    
+    while (startIdx < lines.length) {
+      const pageLines = lines.slice(startIdx, startIdx + maxLinesPerPage);
+      const pageLineCount = pageLines.length;
+      
+      // Calculate height needed for this page's code block
+      const codeBoxH = pageLineCount * 4.8 + (hasH && isFirstBlock ? 12 : 7) + 4;
+      const totalH = Math.min(codeBoxH + 6, 160);
+      
+      // Ensure we have space; if not, move to next page
+      this.need(totalH);
+      
+      const bx = this.ML, by = this.y;
+      
+      // Code block background
+      d.setFillColor(...v(C.codeBg));
+      d.roundedRect(bx, by, this.CW, codeBoxH, 3, 3, 'F');
+      d.setDrawColor(48, 54, 61);
+      d.setLineWidth(0.3);
+      d.roundedRect(bx, by, this.CW, codeBoxH, 3, 3, 'S');
+      
+      let ty = by;
+      
+      // Language header (only on first block)
+      if (hasH && isFirstBlock) {
+        d.setFillColor(...v(C.codeHdr));
+        d.roundedRect(bx, by, this.CW, 9, 3, 3, 'F');
+        d.rect(bx, by + 4, this.CW, 5, 'F');
+        ([[6, C.red], [11, C.amber], [16, C.green]] as [number, RGB][]).forEach(([dx, col]) => {
+          d.setFillColor(...v(col));
+          d.circle(bx + dx, by + 4.5, 1.5, 'F');
+        });
+        d.setFont('helvetica', 'bold');
+        d.setFontSize(7.5);
+        d.setTextColor(...v(C.cyan));
+        d.text((lang || '').toUpperCase(), bx + 24, by + 6.5);
+        ty = by + 10;
+      } else {
+        ty = by + 6;
+      }
+      
+      // Render code lines
+      d.setFont('courier', 'normal');
+      d.setFontSize(8.2);
+      d.setTextColor(...v(C.codeText));
+      pageLines.forEach((line: string) => {
+        d.text(line.slice(0, 96), bx + 5, ty + 4);
+        ty += 5.0;
       });
-      d.setFont('helvetica', 'bold'); d.setFontSize(7.5);
-      d.setTextColor(...v(C.cyan));
-      d.text((lang || '').toUpperCase(), bx + 24, by + 6.5);
-      ty = by + 10;
-    } else {
-      ty = by + 6;
+      
+      // Add "continued" indicator if more code follows
+      if (startIdx + maxLinesPerPage < lines.length) {
+        d.setFont('helvetica', 'italic');
+        d.setFontSize(7.5);
+        d.setTextColor(...v(C.textB));
+        d.text('… continued on next page', bx + 5, ty + 4);
+      }
+      
+      this.y = by + codeBoxH + 6;
+      startIdx += maxLinesPerPage;
+      isFirstBlock = false;
     }
-
-    d.setFont('courier', 'normal'); d.setFontSize(8.2);
-    d.setTextColor(...v(C.codeText));
-    vis.forEach(l => {
-      if (ty > by + boxH - 3) return;
-      d.text(l.slice(0, 96), bx + 5, ty + 4);
-      ty += 4.8;
-    });
-    if (extra > 0) {
-      d.setFont('helvetica', 'italic'); d.setFontSize(7.5);
-      d.setTextColor(...v(C.textM));
-      d.text(`… and ${extra} more lines`, bx + 5, ty + 4);
-    }
-    this.y = by + boxH + 6;
   }
 
   private table(rows: string[][]) {
     const d    = this.doc;
+    if (!rows || rows.length === 0) return;
+
     const cols = rows[0].length;
-    const cw   = this.CW / cols;
-    const rh   = 8;
-    const tot  = rows.length * rh + 2;
-    this.need(Math.min(tot + 6, 55));
+    const cw   = this.CW / cols;  // Cell width
+    const minRh = 8;  // Minimum row height
+    
+    // Calculate actual row heights based on content wrapping
+    const rowHeights: number[] = [];
+    let totalHeight = 0;
+    
+    rows.forEach((row, ri) => {
+      let maxLines = 1;
+      row.forEach(cell => {
+        const cleanCell = this.clean(cell || '');
+        const lines = d.splitTextToSize(cleanCell, cw - 6);
+        maxLines = Math.max(maxLines, lines.length);
+      });
+      // Row height: min 8mm + extra space for wrapped lines
+      const rh = Math.max(minRh, 4 + maxLines * 4.5);
+      rowHeights.push(rh);
+      totalHeight += rh;
+    });
+    
+    // Check if table fits on current page; if not, start new page
+    this.need(Math.min(totalHeight + 6, 100));
 
     let sy = this.y;
     const sx = this.ML;
 
+    // Table background
     d.setFillColor(...v(C.cardBg));
-    d.roundedRect(sx, sy, this.CW, tot, 3, 3, 'F');
+    d.roundedRect(sx, sy, this.CW, totalHeight, 3, 3, 'F');
     d.setDrawColor(...v(C.borderLt)); d.setLineWidth(0.25);
-    d.roundedRect(sx, sy, this.CW, tot, 3, 3, 'S');
+    d.roundedRect(sx, sy, this.CW, totalHeight, 3, 3, 'S');
 
+    // Render each row with COMPLETE multi-line cell content
     rows.forEach((row, ri) => {
       const isH = ri === 0;
+      const rh = rowHeights[ri];
+      
+      // Header styling
       if (isH) {
         d.setFillColor(...v(C.indigo));
         d.roundedRect(sx, sy, this.CW, rh, 3, 3, 'F');
         d.rect(sx, sy + 2, this.CW, rh - 2, 'F');
       } else {
+        // Alternating row colors
         const e = ri % 2 === 0;
         d.setFillColor(e ? 250 : 244, e ? 250 : 247, e ? 255 : 254);
         d.rect(sx, sy, this.CW, rh, 'F');
       }
+      
+      // Cell text styling
       d.setFont('helvetica', isH ? 'bold' : 'normal');
       d.setFontSize(isH ? 8.5 : 9);
       d.setTextColor(isH ? 255 : C.textB[0], isH ? 255 : C.textB[1], isH ? 255 : C.textB[2]);
+      
+      // Render each cell with ALL content (multi-line support)
       row.forEach((cell, ci) => {
+        // Draw column separator
         if (ci > 0) {
           d.setDrawColor(...v(C.borderLt)); d.setLineWidth(0.15);
           d.line(sx + ci * cw, sy, sx + ci * cw, sy + rh);
         }
-        d.text(d.splitTextToSize(this.clean(cell), cw - 6)[0] || '', sx + ci * cw + 4, sy + 5.5);
+        
+        // Clean and split text to fit cell width
+        const cleanCell = this.clean(cell || '');
+        const cellLines = d.splitTextToSize(cleanCell, cw - 6);
+        
+        // Render ALL lines within the cell (complete, untruncated content)
+        const cellStartY = sy + 4;
+        cellLines.forEach((line: string, lineIdx: number) => {
+          const lineY = cellStartY + lineIdx * 4.5;
+          if (lineY < sy + rh - 2) {  // Don't overflow row
+            d.text(line, sx + ci * cw + 3, lineY, { maxWidth: cw - 6 });
+          }
+        });
       });
+      
+      // Draw row separator
       if (ri < rows.length - 1) {
         d.setDrawColor(...v(C.borderLt)); d.setLineWidth(0.15);
         d.line(sx, sy + rh, sx + this.CW, sy + rh);
       }
+      
       sy += rh;
     });
+    
     this.y = sy + 6;
   }
 
@@ -587,7 +655,7 @@ export class PdfService {
     d.setFillColor(...v(C.indigo));   d.circle(cx - 5, cy, 1.2, 'F');
     d.setFillColor(...v(C.purple));   d.circle(cx,     cy, 1.2, 'F');
     d.setFillColor(...v(C.indigo));   d.circle(cx + 5, cy, 1.2, 'F');
-    this.y += 10;
+    this.y += 8;
   }
 
   private step(label: string, state: string) {
@@ -784,13 +852,104 @@ export class PdfService {
 
   clean(text: string): string {
     return (text || '')
+      // Decode HTML entities first (comprehensive list)
+      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&apos;/g, "'")
+      .replace(/&nbsp;/g, ' ').replace(/&mdash;/g, '—').replace(/&ndash;/g, '–')
+      .replace(/&hellip;/g, '...').replace(/&bull;/g, '•')
+      .replace(/&euro;/g, '€').replace(/&pound;/g, '£').replace(/&yen;/g, '¥')
+      // Strip HTML tags completely
       .replace(/<[^>]*>/g, '')
-      .replace(/\*\*(.*?)\*\*/g, '$1')
-      .replace(/\*(.*?)\*/g, '$1')
+      // Strip markdown formatting
+      .replace(/\*\*\*(.+?)\*\*\*/g, '$1')
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/\*(.+?)\*/g, '$1')
+      .replace(/_{2}(.+?)_{2}/g, '$1')
+      .replace(/_(.+?)_/g, '$1')
       .replace(/`{3}[\s\S]*?`{3}/g, '[code]')
-      .replace(/`(.*?)`/g, '$1')
+      .replace(/`(.+?)`/g, '$1')
       .replace(/^#{1,6}\s+/gm, '')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
   }
+}
+
+export function determineBulletStyle(text: string): Exclude<PdfLine['bulletStyle'], undefined> {
+  const raw = (text || '').toLowerCase().trim();
+  
+  // Priority 1: Critical/urgent/key highlights → SOLID STAR (highest priority)
+  if (/(critical|urgent|important|key|takeaway|must|essential|vital|alert|attention|priority)/i.test(raw)) {
+    return 'star';
+  }
+  
+  // Priority 2: Special/premium/eye-catching → SPARKLE STAR (prioritized by user)
+  if (/(special|premium|eye-catching|highlight|unique|feature|benefit|advantage|exclusive|priority|upgrade|elite)/i.test(raw)) {
+    return 'sparkle';
+  }
+  
+  // Bugs/issues/limitations/cons → CROSSMARK
+  if (/(bug|issue|limitation|constraint|problem|error|fail|wrong|mistake|limitation|drawback|con|negative|risk|threat|challenge)/i.test(raw)) {
+    return 'crossmark';
+  }
+  
+  // Success/completion/pros/benefits → CHECKMARK
+  if (/(complete|done|completed|success|finished|ready|passed|passed|achieved|benefit|pro|positive|advantage|strength)/i.test(raw)) {
+    return 'checkmark';
+  }
+  
+  // API/UI/documentation → SINGLE CHEVRON
+  if (/(api|endpoint|ui|step|navigate|click|user interface|interface|documentation|technical|web service|rest|graphql)/i.test(raw)) {
+    return 'chevron';
+  }
+  
+  // Terminal/commands/workflows → DOUBLE CHEVRON
+  if (/(terminal|command|bash|cmd|powershell|script|install|deploy|run|build|execute|code|compile|npm|yarn|git|shell)/i.test(raw)) {
+    return 'double-chevron';
+  }
+  
+  // Pipelines/flows/data/processes → ARROW
+  if (/(pipeline|flow|input|output|data|process|stream|transfer|connection|link|relationship|dependency|export|import|sync)/i.test(raw)) {
+    return 'arrow';
+  }
+  
+  // Design/proposal/brief → DIAMOND
+  if (/(design|proposal|brief|scope|specification|spec|layout|framework|architecture|plan|strategy|blueprint|template)/i.test(raw)) {
+    return 'diamond';
+  }
+  
+  // Milestones/major sections → LARGE SQUARE
+  if (/(milestone|major|section|chapter|phase|phase|module|component|part|stage|level|tier|category|group|classification)/i.test(raw)) {
+    return 'large-square';
+  }
+  
+  // IT projects/tech specs/structured → SOLID SQUARE
+  if (/(project|it|technology|tech|system|infrastructure|environment|setup|configuration|structured|framework|system|protocol)/i.test(raw)) {
+    return 'solid-square';
+  }
+  
+  // Forward-moving/action points → TRIANGLE
+  if (/(action|forward|next|proceed|move|advance|progress|direction|route|path|strategy|tactic|approach)/i.test(raw)) {
+    return 'triangle';
+  }
+  
+  // Nested/sub-details → HOLLOW CIRCLE
+  if (/(sub|nested|detail|note|secondary|additional|extra|minor|auxiliary|support|child|related)/i.test(raw)) {
+    return 'hollow-circle';
+  }
+  
+  // Em/en dashes for minimalist style
+  if (/(dash|minimal|clean|simple|concise|brief|short)/i.test(raw)) {
+    return 'em-dash';
+  }
+  
+  // Numbered items default to arrow
+  if (/^\d+\./.test(raw)) return 'arrow';
+  
+  // Resume/CV duties → standard dot
+  if (/(duty|responsibility|role|manage|oversee|lead|supervise|maintain|support|develop|design|deliver)/i.test(raw)) {
+    return 'dot';
+  }
+  
+  // Default
+  return 'dot';
 }

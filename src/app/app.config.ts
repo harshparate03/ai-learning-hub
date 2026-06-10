@@ -1,7 +1,7 @@
 import { ApplicationConfig, provideZoneChangeDetection, APP_INITIALIZER } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { provideAnimations } from '@angular/platform-browser/animations';
-import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClient, withJsonpSupport } from '@angular/common/http';
 import { ThemeService } from './core/services/theme.service';
 
 import { routes } from './app.routes';
@@ -11,7 +11,7 @@ export const appConfig: ApplicationConfig = {
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(routes),
     provideAnimations(),
-    provideHttpClient(),
+    provideHttpClient(withJsonpSupport()),
     { provide: APP_INITIALIZER, useFactory: (t: ThemeService) => () => {}, deps: [ThemeService], multi: true }
   ]
 };

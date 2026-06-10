@@ -3,15 +3,19 @@ const path = require('path');
 const dir  = path.join(__dirname, '../src/environments');
 
 const groq = process.env['GROQ_API_KEY'] || '';
+const youtube = process.env['YOUTUBE_API_KEY'] || '';
 
 console.log('[generate-env] GROQ_API_KEY present:', !!groq);
-console.log('[generate-env] GROQ_API_KEY length:', groq.length);
-console.log('[generate-env] GROQ_API_KEY prefix:', groq.slice(0, 7));
+console.log('[generate-env] YOUTUBE_API_KEY present:', !!youtube);
 
 if (!groq) {
   console.error('[generate-env] ERROR: GROQ_API_KEY env var is not set in Vercel!');
   console.error('[generate-env] Go to Vercel → Project → Settings → Environment Variables and add GROQ_API_KEY');
-  process.exit(1); // fail the build so it's obvious
+  process.exit(1);
+}
+
+if (!youtube) {
+  console.warn('[generate-env] WARNING: YOUTUBE_API_KEY not set — YouTube search will use fallbacks only');
 }
 
 const content = (production) => `/**
@@ -20,6 +24,7 @@ const content = (production) => `/**
 export const environment = {
   production: ${production},
   groqApiKey: ${JSON.stringify(groq)},
+  youtubeApiKey: ${JSON.stringify(youtube)},
 };
 `;
 

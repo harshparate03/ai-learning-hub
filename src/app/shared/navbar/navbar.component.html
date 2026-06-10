@@ -58,7 +58,7 @@
 
   <ng-container *ngIf="isLoggedIn">
     <div class="user-chip">
-      <span class="user-avatar">{{ currentUser.charAt(0).toUpperCase() }}</span>
+      <span class="user-avatar">{{ (currentUser.charAt(0) || '?').toUpperCase() }}</span>
       <span>{{ currentUser.split('@')[0] | slice:0:12 }}</span>
     </div>
     <button class="btn-logout" (click)="logout()">Sign out</button>

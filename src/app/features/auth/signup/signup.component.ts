@@ -25,8 +25,12 @@ export class SignupComponent {
     private router: Router,
     private route:  ActivatedRoute
   ) {
+    // Validate redirect — must be a local path starting with /
     this.route.queryParams.subscribe(p => {
-      if (p['redirect']) this.redirectUrl = p['redirect'];
+      const raw = p['redirect'];
+      if (raw && typeof raw === 'string' && raw.startsWith('/') && !raw.startsWith('//')) {
+        this.redirectUrl = raw;
+      }
     });
 
     if (this.auth.isLoggedIn()) {
@@ -59,8 +63,10 @@ export class SignupComponent {
       // Auto-login after signup, then redirect to original destination
       this.auth.login(this.email, this.password);
       setTimeout(() => this.router.navigateByUrl(this.redirectUrl), 1200);
+    } else if (this.auth.isEmailTaken(this.email)) {
+      this.errorMsg = 'Email already registered. Try signing in instead.';
     } else {
-      this.errorMsg = 'Email already registered.';
+      this.errorMsg = 'Could not create account. Check your email and try a stronger password.';
     }
   }
 }

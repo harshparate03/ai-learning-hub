@@ -1,10 +1,11 @@
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { firstValueFrom } from 'rxjs';
 import { YoutubeService } from '../../../core/services/youtube.service';
 import { AiService } from '../../../core/services/ai.service';
 import { SafeUrlPipe } from '../../../core/pipes/safe-url.pipe';
-import { jsPDF } from 'jspdf';
+import { PdfService, PdfLine } from '../../../core/services/pdf.service';
 
 interface ContentBlock {
   type: 'heading' | 'subheading' | 'para' | 'bullet' | 'table' | 'diagram' | 'definition' | 'divider' | 'code' | 'visual' | 'step-visual';
@@ -109,11 +110,17 @@ export class SearchComponent {
 `;
   }
 
-  constructor(public yt: YoutubeService, private ai: AiService) {}
+  constructor(public yt: YoutubeService, private ai: AiService, private pdf: PdfService) {}
 
   onQueryInput(): void {
-    this.suggestions = this.yt.getStudySuggestions(this.query);
-    this.showSuggestions = this.suggestions.length > 0 && this.activeTab === 'search';
+    if (this.query.trim().length > 1) {
+      this.suggestions = this.yt.getStudySuggestions(this.query);
+      this.showSuggestions = this.suggestions.length > 0 && this.activeTab === 'search';
+      console.log('[YouTube Suggestions]', { query: this.query, count: this.suggestions.length, suggestions: this.suggestions.slice(0, 3) });
+    } else {
+      this.suggestions = [];
+      this.showSuggestions = false;
+    }
   }
 
   applySuggestion(suggestion: string): void {
@@ -150,8 +157,10 @@ export class SearchComponent {
         }
         this.loading = false;
       },
-      error: () => {
-        this.errorMsg = 'Search failed. Please paste a video URL using the "🔗 Paste URL" tab.';
+      error: (err: any) => {
+        this.errorMsg = err?.status === 0
+          ? 'YouTube API unavailable. Run "npm run proxy" in a separate terminal, then try again.'
+          : 'Search failed. Try pasting a video URL using the "🔗 Paste URL" tab.';
         this.loading = false;
       }
     });
@@ -537,6 +546,11 @@ Use EXACTLY this format:
     this.ai.generateWithGroq(prompts[type]).subscribe({
       next: (res: any) => {
         const text = res?.choices?.[0]?.message?.content || '';
+        if (!text || this.ai.isDemoFallback(text)) {
+          this.errorMsg = this.ai.proxyErrorMessage({ status: 0 });
+          this.loadingAI = false;
+          return;
+        }
         if (type === 'summary')   this.summaryBlocks = this.parseBlocks(text);
         if (type === 'keypoints') this.parseKeyPoints(text);
         if (type === 'notes')     this.notesBlocks = this.parseBlocks(text);
@@ -544,14 +558,8 @@ Use EXACTLY this format:
         this.loadingAI = false;
       },
       error: (err: any) => {
-        const status = err?.status;
-        if (status === 401 || status === 403) {
-          this.errorMsg = 'API key is invalid. Please update the API key in the environment config.';
-        } else if (status === 429) {
-          this.errorMsg = 'Rate limit reached. Please wait a moment and try again.';
-        } else {
-          this.errorMsg = 'AI generation failed. Try again.';
-        }
+        console.error(`[YouTube AI Error (${type})]`, err);
+        this.errorMsg = this.ai.proxyErrorMessage(err);
         this.loadingAI = false;
       }
     });
@@ -745,26 +753,41 @@ Output ONLY:
     }
 
     try {
-      const results = await Promise.all([
-        this.ai.generateWithGroq(infoPrompt).toPromise(),
-        this.ai.generateWithGroq(codePrompt).toPromise(),
-        this.ai.generateWithGroq(visualPrompt).toPromise()
-      ]);
-
-      const getText = (r: any) =>
-        r?.choices?.[0]?.message?.content ||
-        r?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      // Sequential calls avoid Groq rate limits from 3 parallel requests.
+      const infoText = await this.groqText(infoPrompt);
+      const codeText = await this.groqText(codePrompt);
+      const visualText = await this.groqText(visualPrompt);
 
       this.visualBlocks = [
-        ...this.parseBlocks(getText(results[0])),
-        ...this.parseBlocks(getText(results[1])),
-        ...this.parseBlocks(getText(results[2]))
+        ...this.parseBlocks(infoText),
+        ...this.parseBlocks(codeText),
+        ...this.parseBlocks(visualText)
       ];
+
+      if (!this.visualBlocks.length) {
+        this.errorMsg = 'AI returned empty content. Try again.';
+      }
     } catch (e: any) {
       console.error('[VisualNotes Error]', e);
-      this.errorMsg = 'Generation failed. Try again.';
+      this.errorMsg = e?.message || 'Generation failed. Try again.';
     } finally {
       this.loadingAI = false;
+    }
+  }
+
+  private async groqText(prompt: string): Promise<string> {
+    try {
+      const res = await firstValueFrom(this.ai.generateWithGroq(prompt));
+      return res?.choices?.[0]?.message?.content?.trim() || '';
+    } catch (err: any) {
+      const status = err?.status ?? err?.error?.status;
+      if (status === 401 || status === 403) {
+        throw new Error('API key is invalid. Check GROQ_API_KEY in your .env file.');
+      }
+      if (status === 429) {
+        throw new Error('Rate limit reached. Wait a few seconds and try again.');
+      }
+      throw new Error('Generation failed. Try again.');
     }
   }
 
@@ -965,34 +988,93 @@ Output ONLY:
 
   downloadPDF() {
     const title = this.selectedVideo?.snippet?.title || 'YouTube Notes';
+    const channel = this.selectedVideo?.snippet?.channelTitle || '';
     const tab = this.activeAITab;
-    const doc = new jsPDF();
-    let y = 20;
-    const pageH = doc.internal.pageSize.height;
-    const add = (text: string, size: number, bold: boolean, color: number[]) => {
-      doc.setFontSize(size); doc.setFont('helvetica', bold ? 'bold' : 'normal');
-      doc.setTextColor(color[0], color[1], color[2]);
-      doc.splitTextToSize(text, 175).forEach((l: string) => {
-        if (y > pageH - 15) { doc.addPage(); y = 20; }
-        doc.text(l, 15, y); y += 7;
-      }); y += 2;
-    };
-    add(title, 16, true, [99, 102, 241]);
-    add(`${tab.charAt(0).toUpperCase() + tab.slice(1)} — ${new Date().toLocaleDateString()}`, 10, false, [120, 120, 120]); y += 4;
-    const renderBlocks = (blocks: ContentBlock[]) => blocks.forEach(b => {
-      if (b.type === 'heading')    add(b.content || '', 13, true, [50, 50, 180]);
-      if (b.type === 'subheading') add(b.content || '', 12, true, [70, 70, 70]);
-      if (b.type === 'para')       add(b.content || '', 11, false, [40, 40, 40]);
-      if (b.type === 'bullet')     add(`• ${b.content}`, 11, false, [40, 40, 40]);
-      if (b.type === 'definition') add(`${b.term}: ${b.def}`, 11, false, [40, 40, 40]);
-      if (b.type === 'code')       add(b.content || '', 9, false, [80, 80, 80]);
-    });
-    if (tab === 'summary')   renderBlocks(this.summaryBlocks);
-    if (tab === 'notes')     renderBlocks(this.notesBlocks);
-    if (tab === 'visual')    renderBlocks(this.visualBlocks);
-    if (tab === 'keypoints') this.keyPoints.forEach((kp, i) => { add(`${i+1}. ${kp.title}`, 12, true, [50,50,180]); add(kp.detail, 11, false, [40,40,40]); });
-    if (tab === 'quiz')      this.quiz.forEach((qa, i) => { add(`Q${i+1}: ${qa.q}`, 12, true, [50,50,180]); add(`Answer: ${qa.a}`, 11, false, [40,40,40]); });
-    doc.save(`${title.replace(/\s+/g,'-').toLowerCase()}-${tab}.pdf`);
+
+    const lines: PdfLine[] = [];
+    let subtitle = `${channel ? channel + ' · ' : ''}`;
+    let filename = `${title.replace(/\s+/g, '-').toLowerCase()}`;
+
+    // Export ONLY the active tab content (not all sections combined)
+    if (tab === 'summary') {
+      subtitle += 'Video Summary';
+      if (this.summaryBlocks.length) {
+        this.blocksToLines(this.summaryBlocks).forEach(l => lines.push(l));
+      }
+      filename += '-summary.pdf';
+    } 
+    else if (tab === 'keypoints') {
+      subtitle += 'Key Points';
+      if (this.keyPoints.length) {
+        this.keyPoints.forEach((kp, i) => {
+          lines.push({ type: 'kp', text: `${i + 1}. ${kp.title}`, def: kp.detail });
+        });
+      }
+      filename += '-key-points.pdf';
+    } 
+    else if (tab === 'notes') {
+      subtitle += 'Study Notes';
+      if (this.notesBlocks.length) {
+        this.blocksToLines(this.notesBlocks).forEach(l => lines.push(l));
+      }
+      filename += '-notes.pdf';
+    } 
+    else if (tab === 'visual') {
+      subtitle += 'Code + Visuals';
+      if (this.visualBlocks.length) {
+        this.blocksToLines(this.visualBlocks).forEach(l => lines.push(l));
+      }
+      filename += '-code-visuals.pdf';
+    } 
+    else if (tab === 'quiz') {
+      subtitle += 'Quiz';
+      if (this.quiz.length) {
+        this.quiz.forEach((qa, i) => {
+          lines.push({ type: 'qa-q', text: `Q${i + 1}: ${qa.q}` });
+          lines.push({ type: 'qa-a', text: qa.a });
+        });
+      }
+      filename += '-quiz.pdf';
+    }
+
+    this.pdf.save(
+      filename,
+      title,
+      subtitle,
+      lines,
+      { template: 'study' }
+    );
+  }
+
+  private blockToPdfLine(b: any): PdfLine {
+    if (b.type === 'heading')    return { type: 'heading',    text: b.content };
+    if (b.type === 'subheading') return { type: 'subheading', text: b.content };
+    if (b.type === 'para')       return { type: 'para',       text: b.content };
+    if (b.type === 'bullet')     return { type: 'bullet',     text: b.content };
+    if (b.type === 'definition') return { type: 'definition', term: b.term, def: b.def };
+    if (b.type === 'divider')    return { type: 'divider' };
+    if (b.type === 'code')       return { type: 'code', text: b.content, label: b.lang };
+    if (b.type === 'table')      return { type: 'table', rows: b.rows };
+    return { type: 'para', text: b.content || '' };
+  }
+
+  private blocksToLines(blocks: any[]): PdfLine[] {
+    const out: PdfLine[] = [];
+    for (const b of blocks) {
+      if (b.type === 'step-visual' && b.frames) {
+        out.push({ type: 'subheading', text: b.content });
+        b.frames.forEach((f: any) => out.push({ type: 'step', label: f.label, state: f.state }));
+      } else if (b.type === 'visual' && b.steps) {
+        out.push({ type: 'subheading', text: b.content });
+        out.push({ type: 'code', text: b.steps.join('\n'), label: 'ascii' });
+      } else if (b.type === 'diagram' && b.steps) {
+        out.push({ type: 'subheading', text: b.content });
+        b.steps.forEach((s: string, i: number) => out.push({ type: 'bullet', text: `${i + 1}. ${s}` }));
+      } else {
+        out.push(this.blockToPdfLine(b));
+      }
+    }
+    return out;
   }
 
   saveToHistory() {

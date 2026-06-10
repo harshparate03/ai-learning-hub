@@ -565,3 +565,17 @@
   color: var(--accent);
   background: rgba(99,102,241,.07);
 }
+
+.btn-chat-download {
+  background: var(--grad-btn);
+  color: white;
+  border-color: transparent;
+  box-shadow: 0 2px 8px rgba(99,102,241,0.28);
+}
+.btn-chat-download:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(99,102,241,0.42);
+  background: var(--grad-btn);
+  color: white;
+  border-color: transparent;
+}
