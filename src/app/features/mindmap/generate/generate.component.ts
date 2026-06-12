@@ -970,69 +970,118 @@ Return ONLY valid JSON (no markdown, no code fences):
     this.sourceContent = content;
     this.progress = 'Building mind map...';
 
-    // Determine if this is a short topic keyword vs full content
-    const isShortTopic = !isContentBased && content.trim().split(/\s+/).length <= 15;
+    // Short topic = keyword(s) typed by user (e.g. "Software Testing", "Machine Learning")
+    const isShortTopic = !isContentBased && content.trim().split(/\s+/).length <= 20;
 
-    const prompt = isShortTopic
-      // ── SHORT TOPIC (e.g. "Software Testing", "Machine Learning") ──────────
-      ? `You are a professional knowledge architect. Create a comprehensive, accurate mind map about: "${content}"
+    const topicPrompt = `You are an expert Visual Knowledge Architect, Mind Mapping Specialist, Learning Designer, and Information Structuring Expert.
 
-RULES:
-- Root label = exactly the topic name: "${content}"
-- Branches MUST be the actual key concepts, categories, types, or aspects of "${content}" specifically
-- Every branch and subtopic must be directly related to "${content}" — no generic filler
-- Labels: 2-5 words, precise terminology from this domain
-- Definitions: 3-5 sentences — what it is, how it works, why it matters, with a real example from "${content}"
+Create a highly detailed, professional, comprehensive mind map on: "${content}"
 
-Return ONLY valid JSON (no markdown, no code fences):
+OBJECTIVE: Transform complex information into a clear, structured, easy-to-understand visual knowledge system suitable for learning, teaching, revision, strategic planning, and presentations.
+
+STRUCTURE RULES:
+1. Place "${content}" at the center (root, level 0).
+2. Create exactly 8-10 primary branches (level 1) covering ALL major dimensions.
+3. Under each primary branch:
+   - Add 5-8 secondary branches (level 2)
+   - Add 2-4 tertiary branches (level 3) where deeper explanation is needed
+   - Maintain strict logical parent-child relationships
+
+REQUIRED BRANCH COVERAGE (pick the most relevant 8-10 for "${content}"):
+- Definition & Overview
+- Core Concepts & Theory
+- Key Components / Types / Categories
+- Frameworks & Methodologies
+- Processes & Workflows
+- Tools & Technologies
+- Real-world Applications & Examples
+- Benefits & Advantages
+- Challenges, Risks & Limitations
+- Best Practices & Expert Tips
+- Common Mistakes to Avoid
+- Implementation Strategy
+- Future Trends & Innovations
+- Actionable Recommendations
+
+NODE RULES:
+- Labels: concise keywords only, MAX 4 words per node — no sentences
+- NO numbering, NO bullet prefixes, NO punctuation in labels
+- Definitions: 3-5 complete sentences explaining what it is, how it works, why it matters, with a concrete example
+- NEVER leave "definition" empty
+- Keep children arrays in logical order (basic → advanced)
+- Remove any duplicate concepts across branches
+
+HIERARCHY QUALITY:
+- Root → Primary → Secondary → Tertiary (max 4 levels)
+- Each parent must clearly own its children
+- Children must be more specific than their parent
+- Group related sub-concepts together under the same parent
+
+Return ONLY valid JSON — no markdown, no code fences, no explanation text:
 {
   "root": {
-    "id": "root", "label": "${content}", "level": 0,
-    "definition": "3-5 sentence overview of ${content}.",
+    "id": "root",
+    "label": "${content}",
+    "level": 0,
+    "definition": "Comprehensive 3-5 sentence overview: what ${content} is, its core purpose, why it matters, and where it is used.",
     "children": [
       {
-        "id": "b1", "label": "Key Concept from ${content}", "level": 1,
-        "definition": "3-5 sentences about this aspect of ${content}.",
+        "id": "b1",
+        "label": "Core Concepts",
+        "level": 1,
+        "definition": "3-5 sentences about the fundamental theoretical foundations of ${content}.",
         "children": [
           {
-            "id": "b1a", "label": "Subtopic", "level": 2,
-            "definition": "3-5 sentence explanation.",
+            "id": "b1a",
+            "label": "Exact Subtopic",
+            "level": 2,
+            "definition": "3-5 sentences about this subtopic.",
             "children": [
-              { "id": "b1a1", "label": "Detail", "level": 3, "definition": "3-5 sentences.", "children": [] }
+              { "id": "b1a1", "label": "Specific Detail", "level": 3, "definition": "3-5 sentences.", "children": [] }
             ]
           }
         ]
       }
     ]
   }
-}`
-      // ── LONG TEXT / CONTENT-BASED (file, long text) ─────────────────────────
-      : `You are a professional knowledge architect. Analyze this content and build a mind map that STRICTLY follows what is written in it.
+}`;
 
-CONTENT TO ANALYZE:
+    const contentPrompt = `You are an expert Visual Knowledge Architect and Information Structuring Expert.
+
+Analyze the content below and build a mind map that STRICTLY follows what is written in it.
+
+CONTENT:
 ${content.slice(0, 12000)}
 
 STRICT RULES:
-- Root label = the main topic/title found in the content above
-- Branches = the actual main sections, topics, or themes FROM THE CONTENT — not invented ones
-- Every node label must come from actual terms, headings, or concepts in the content
-- Every definition must be based on information from the content — no external knowledge
-- DO NOT add generic branches like "Overview", "Best Practices", "Future Trends" unless those exact topics appear in the content
-- Labels: 2-5 words, exactly as they appear in the content
+- Root label = the main topic/title found in the content
+- Primary branches = actual main sections, themes, or major headings FROM THE CONTENT
+- All labels must use exact terms, headings, or concepts from the content
+- All definitions must use ONLY information from the content — no external knowledge added
+- DO NOT invent topics not in the content
+- Labels: 2-4 words maximum, use exact terminology from the content
 - Definitions: 3-5 sentences using only information from the content above
+- Structure: at least 6 primary branches, each with 3-6 secondary branches
+- Maintain parent-child logic: children must be sub-topics of their parent
 
 Return ONLY valid JSON (no markdown, no code fences):
 {
   "root": {
-    "id": "root", "label": "Main Topic from Content", "level": 0,
+    "id": "root",
+    "label": "Main Topic from Content",
+    "level": 0,
     "definition": "3-5 sentence overview based on the content.",
     "children": [
       {
-        "id": "b1", "label": "Section from Content", "level": 1,
-        "definition": "3-5 sentences from the content.",
+        "id": "b1",
+        "label": "Section from Content",
+        "level": 1,
+        "definition": "3-5 sentences directly from the content.",
         "children": [
           {
-            "id": "b1a", "label": "Subtopic from Content", "level": 2,
+            "id": "b1a",
+            "label": "Subsection from Content",
+            "level": 2,
             "definition": "3-5 sentences from the content.",
             "children": [
               { "id": "b1a1", "label": "Detail from Content", "level": 3, "definition": "3-5 sentences.", "children": [] }
@@ -1043,6 +1092,8 @@ Return ONLY valid JSON (no markdown, no code fences):
     ]
   }
 }`;
+
+    const prompt = isShortTopic ? topicPrompt : contentPrompt;
 
     let res: any;
     try {
@@ -2021,16 +2072,22 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
     this.progress = 'Building mind map...';
 
     const prompt = context && context.trim().length > 50
-      ? `You are a mind map expert. Build a comprehensive mind map using the YouTube video data below.
+      ? `You are an expert Visual Knowledge Architect, Mind Mapping Specialist, and Learning Designer.
 
-CRITICAL RULES:
-- Root label MUST be the exact VIDEO TITLE from the data
-- If CHAPTERS exist, each chapter = one level-1 branch
-- If no chapters, use TAGS and DESCRIPTION topics for branches
-- All content must come from the video data — no generic topics
-- Definitions: 3-4 sentences based on video data
-- Labels must be plain concept names only. Do not include numbering or bullet prefixes.
-- Keep child arrays in logical viewing order. The app adds numbering automatically.
+Build a highly detailed, professionally structured mind map using the YouTube video data below.
+
+STRUCTURE RULES:
+1. Root label = exact VIDEO TITLE from the data
+2. If CHAPTERS exist → each chapter = one level-1 branch, with subtopics from that chapter's content
+3. If no chapters → create 8-10 branches from the TAGS, DESCRIPTION, and video topic
+4. Under each branch: 4-6 secondary branches, 2-3 tertiary branches where needed
+5. All content must come ONLY from the video data — no external knowledge
+
+NODE RULES:
+- Labels: 2-4 words max, concise keywords only — NO numbering, NO bullets
+- Definitions: 3-5 sentences — what it covers, key points, why it matters with a specific example from the video
+- Maintain strict parent → child hierarchy: children are sub-topics of their parent
+- Group related sub-concepts under the same parent
 
 --- VIDEO DATA ---
 ${context}
@@ -2039,14 +2096,24 @@ ${context}
 Return ONLY valid JSON (no markdown, no code fences):
 {
   "root": {
-    "id": "root", "label": "<exact video title>", "level": 0,
-    "definition": "<what this video covers based on description>",
+    "id": "root",
+    "label": "<exact video title>",
+    "level": 0,
+    "definition": "3-5 sentences covering what this video is about, who it is for, and what the viewer will learn.",
     "children": [
-      { "id": "b1", "label": "<branch from chapters/tags>", "level": 1, "definition": "<explanation from video data>",
+      {
+        "id": "b1",
+        "label": "<chapter or topic from video>",
+        "level": 1,
+        "definition": "3-5 sentences about this section of the video.",
         "children": [
-          { "id": "b1a", "label": "<subtopic>", "level": 2, "definition": "<explanation>",
+          {
+            "id": "b1a",
+            "label": "<subtopic>",
+            "level": 2,
+            "definition": "3-5 sentences about this subtopic.",
             "children": [
-              { "id": "b1a1", "label": "<detail>", "level": 3, "definition": "<specific fact>", "children": [] }
+              { "id": "b1a1", "label": "<specific detail>", "level": 3, "definition": "3-5 sentences.", "children": [] }
             ]
           }
         ]
@@ -2054,30 +2121,48 @@ Return ONLY valid JSON (no markdown, no code fences):
     ]
   }
 }`
-      : `You are a mind map expert. Create a comprehensive mind map for this YouTube video.
+      : `You are an expert Visual Knowledge Architect, Mind Mapping Specialist, and Learning Designer.
 
-VIDEO TITLE: "${videoMeta.title}"
+Create a highly detailed, professionally structured mind map for this YouTube video.
+
+VIDEO TITLE: "${videoMeta!.title}"
+${videoMeta!.channel ? `CHANNEL: ${videoMeta!.channel}` : ''}
+${videoMeta!.tags?.length ? `TAGS: ${videoMeta!.tags.slice(0, 12).join(', ')}` : ''}
 VIDEO URL: ${this.youtubeVideoUrl}
 
-CRITICAL RULES:
-- Root label MUST be exactly: "${videoMeta.title}"
-- Create branches covering the specific subject matter
-- Definitions: 3-5 sentences, detailed and specific
-- 5-7 branches, 3-4 subtopics each, 2-3 details each
-- Labels must be plain concept names only. Do not include numbering or bullet prefixes.
-- Keep child arrays in logical viewing order. The app adds numbering automatically.
+STRUCTURE RULES:
+1. Root label = exactly: "${videoMeta!.title}"
+2. Create 8-10 primary branches covering ALL major dimensions of this video's subject
+3. Under each branch: 4-6 secondary branches, 2-3 tertiary where relevant
+4. Cover: Core Concepts, Key Components, Processes, Tools, Examples, Benefits, Challenges, Best Practices, Real-world Applications, Future Trends (pick most relevant for this topic)
+
+NODE RULES:
+- Labels: 2-4 words, precise domain terminology — NO numbering, NO bullets
+- Definitions: 3-5 complete sentences — what it is, how it works, why it matters, real example
+- Strict parent → child hierarchy
+- Group related concepts together
 
 Return ONLY valid JSON (no markdown, no code fences):
 {
   "root": {
-    "id": "root", "label": "${videoMeta.title}", "level": 0,
-    "definition": "<overview specific to this video topic>",
+    "id": "root",
+    "label": "${videoMeta!.title}",
+    "level": 0,
+    "definition": "3-5 sentences about what this video topic covers, its purpose, and key takeaways.",
     "children": [
-      { "id": "b1", "label": "<specific branch>", "level": 1, "definition": "<detailed explanation>",
+      {
+        "id": "b1",
+        "label": "Core Concepts",
+        "level": 1,
+        "definition": "3-5 sentences about foundational concepts in this topic.",
         "children": [
-          { "id": "b1a", "label": "<subtopic>", "level": 2, "definition": "<explanation>",
+          {
+            "id": "b1a",
+            "label": "Specific Concept",
+            "level": 2,
+            "definition": "3-5 sentences about this concept.",
             "children": [
-              { "id": "b1a1", "label": "<detail>", "level": 3, "definition": "<specific fact>", "children": [] }
+              { "id": "b1a1", "label": "Detail Point", "level": 3, "definition": "3-5 sentences.", "children": [] }
             ]
           }
         ]
