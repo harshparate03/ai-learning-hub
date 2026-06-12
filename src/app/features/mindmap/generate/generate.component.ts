@@ -15,6 +15,7 @@ export interface MindNode {
   id: string;
   label: string;
   level: number;
+  orderPath?: string;
   definition: string;
   children: MindNode[];
   color: string;
@@ -71,6 +72,9 @@ export class GenerateComponent implements OnInit {
   rootNode: MindNode | null = null;
   selectedNode: MindNode | null = null;
   loadingDefinition = false;
+  /** Original text used to build the map (text mode) — powers node definitions */
+  private sourceContent = '';
+  private definitionRequestId = 0;
 
   /** Rich video metadata for YouTube maps — shown in definition panel */
   currentVideoMeta: VideoMeta | null = null;
@@ -90,8 +94,7 @@ export class GenerateComponent implements OnInit {
     if (pending) {
       try {
         const map = JSON.parse(pending);
-        this.rootNode = this.initNode(map.data, 0);
-        this.rootNode.expanded = true;
+        this.rootNode = this.hydrateSavedRoot(map.data);
         // Restore video meta if saved
         if (map.videoMeta) this.currentVideoMeta = map.videoMeta;
       } catch {}
@@ -270,6 +273,8 @@ export class GenerateComponent implements OnInit {
     this.rootNode = null;
     this.selectedNode = null;
     this.currentVideoMeta = null;
+    this.sourceContent = '';
+    this.definitionRequestId++;
     this.progress = 'Starting...';
 
     try {
@@ -283,7 +288,7 @@ export class GenerateComponent implements OnInit {
     } catch (e: any) {
       if (!this.errorMsg) {
         console.error('[Generate Error]', e);
-        this.errorMsg = this.ai.proxyErrorMessage(e);
+        this.handleMindMapGenerationFailure(e);
       }
     } finally {
       this.progress = '';
@@ -291,47 +296,387 @@ export class GenerateComponent implements OnInit {
     }
   }
 
-  // ── FILE: TWO-PHASE GENERATION ───────────────────────────────────────────────
-  private async generateFromFile() {
-    const content = this.fileContent;
+  private handleMindMapGenerationFailure(e: any) {
+    if (this.inputMode === 'file' && this.fileContent) {
+      const rawTree = this.buildExactDocumentTree(this.fileContent);
+      if (rawTree.children.length) {
+        this.rootNode = this.sanitizeMindTree(this.initNode(rawTree, 0));
+        this.rootNode.expanded = true;
+        this.errorMsg = '';
+        return;
+      }
+    }
 
-    this.progress = 'Extracting document structure...';
-    const outline = await this.extractFullOutline(content);
-
-    this.progress = 'Identifying main sections...';
-    const rootData = await this.extractRootAndBranches(outline);
-    if (!rootData) {
-      this.errorMsg = 'Could not parse document structure. Please try again.';
-      console.error('[File Parse Error] extractRootAndBranches returned null');
+    if (this.inputMode === 'text' && this.textInput.trim()) {
+      this.buildLocalMindMap(sanitizeUserInput(this.textInput, 5000), false);
+      this.errorMsg = '';
       return;
     }
 
-    this.rootNode = {
-      id: 'root', label: rootData.rootLabel, level: 0,
-      definition: rootData.rootDef, children: [], color: '#38bdf8', expanded: true
+    this.errorMsg = this.isAiUnavailableError(e)
+      ? 'Could not reach the AI service, so I used local analysis where possible. Please try again if the result is incomplete.'
+      : this.ai.proxyErrorMessage(e);
+  }
+
+  private isAiUnavailableError(e: any): boolean {
+    const message = String(e?.message || e?.error?.message || e || '').toLowerCase();
+    return e?.status === 0 ||
+      e?.status === 503 ||
+      message.includes('all ai models failed') ||
+      message.includes('ai service unavailable') ||
+      message.includes('internet connection') ||
+      message.includes('no ai service available');
+  }
+
+  private isErrorLikeText(text: string): boolean {
+    const t = String(text || '').toLowerCase();
+    return this.isAiUnavailableError(text) ||
+      t.includes('ai request failed') ||
+      t.includes('could not load') ||
+      t.includes('no definition available') ||
+      t.includes('api key is invalid') ||
+      t.includes('rate limit reached');
+  }
+
+  private hasUsableDefinition(node: MindNode): boolean {
+    const def = node.definition?.trim() || '';
+    return def.length >= 20 && !this.isErrorLikeText(def);
+  }
+
+  private getNodeSourceSection(node: MindNode): string {
+    const content = this.fileContent || this.sourceContent;
+    if (!content) return '';
+    return this.extractSection(content, node.label);
+  }
+
+  private hydrateSavedRoot(raw: MindNode): MindNode {
+    const root = JSON.parse(JSON.stringify(raw)) as MindNode;
+    this.refreshNodeMeta(root, 0, '', '#38bdf8');
+    root.expanded = true;
+    return root;
+  }
+
+  private makeLocalNodeDefinition(node: MindNode): string {
+    const parts: string[] = [];
+    if (node.definition && !this.isErrorLikeText(node.definition)) {
+      parts.push(node.definition);
+    }
+    if (node.children?.length) {
+      parts.push(`${node.label} includes ${node.children.map(child => child.label).slice(0, 8).join(', ')}.`);
+    }
+    if (this.rootNode && node !== this.rootNode) {
+      parts.push(`It appears under ${this.rootNode.label} in the uploaded or generated mind map.`);
+    }
+    return parts.join('\n') || `${node.label} is part of the current mind map structure.`;
+  }
+
+  private async generateFromFile() {
+    const content = this.fileContent;
+    await this.generateSingleCall(content, true);
+  }
+
+  private buildExactDocumentTree(content: string): any {
+    const cleanContent = this.normalizeText(content);
+    const rootLabel = this.inferTitle(cleanContent, this.fileName || 'Document Mind Map');
+    const root = {
+      id: 'root',
+      label: rootLabel,
+      level: 0,
+      definition: this.makeDefinition(rootLabel, cleanContent),
+      children: [] as any[]
     };
 
-    const sections = this.splitContentIntoSections(content, rootData.branches);
+    const lines = this.parseDocumentTreeLines(content);
+    const stack: { node: any; level: number; kind: 'root' | 'heading' | 'bullet' | 'table' }[] = [
+      { node: root, level: 0, kind: 'root' }
+    ];
 
-    for (let i = 0; i < rootData.branches.length; i++) {
-      const branchName = rootData.branches[i];
-      this.progress = `Building branch ${i + 1}/${rootData.branches.length}: "${branchName}"...`;
-      const section = sections[i] || content.slice(0, 4000);
-      const branchNode = await this.buildBranchSubtree(branchName, section, i, rootData.rootLabel);
-      this.rootNode.children.push(branchNode);
+    for (const item of lines) {
+      if (item.kind === 'paragraph') {
+        const current = stack[stack.length - 1]?.node || root;
+        current.definition = this.appendDefinition(current.definition, item.text);
+        continue;
+      }
+
+      const baseLevel = this.findCurrentSectionLevel(stack);
+      const level = item.kind === 'heading'
+        ? item.depth
+        : Math.min(8, baseLevel + item.depth);
+
+      if (level === 1 && this.normalizeNodeKey(item.label) === this.normalizeNodeKey(rootLabel)) {
+        continue;
+      }
+
+      while (stack.length > 1 && stack[stack.length - 1].level >= level) stack.pop();
+
+      const parent = stack[stack.length - 1]?.node || root;
+      const node = {
+        id: `doc_${item.index}`,
+        label: this.cleanNodeLabel(item.label),
+        level,
+        definition: item.text,
+        children: [] as any[]
+      };
+
+      parent.children.push(node);
+      stack.push({ node, level, kind: item.kind });
     }
+
+    if (!root.children.length) {
+      root.children = this.chunkDocumentIntoSections(cleanContent, rootLabel)
+        .map((section, i) => this.buildLocalBranch(section.title, section.body, 1, i));
+    }
+
+    this.compactEmptyDocumentBranches(root);
+    return root;
+  }
+
+  private parseDocumentTreeLines(content: string): {
+    kind: 'heading' | 'bullet' | 'paragraph' | 'table';
+    label: string;
+    text: string;
+    depth: number;
+    index: number;
+  }[] {
+    const parsed: {
+      kind: 'heading' | 'bullet' | 'paragraph' | 'table';
+      label: string;
+      text: string;
+      depth: number;
+      index: number;
+    }[] = [];
+    const lines = content.replace(/\r/g, '').split('\n');
+    let tableRows: string[] = [];
+
+    const flushTable = (index: number) => {
+      if (!tableRows.length) return;
+      const rows = tableRows.filter(row => row.trim());
+      const label = rows[0]?.split('|').map(cell => cell.trim()).filter(Boolean).slice(0, 3).join(' / ') || 'Table';
+      parsed.push({
+        kind: 'table',
+        label: `Table: ${label}`,
+        text: rows.join('\n'),
+        depth: 1,
+        index
+      });
+      tableRows = [];
+    };
+
+    lines.forEach((rawLine, index) => {
+      const raw = rawLine.replace(/\t/g, '  ');
+      const trimmed = raw.trim();
+
+      if (trimmed === '[TABLE_START]') {
+        flushTable(index);
+        tableRows = [];
+        return;
+      }
+      if (trimmed === '[TABLE_END]') {
+        flushTable(index);
+        return;
+      }
+      if (tableRows.length && !trimmed.includes(' | ')) {
+        flushTable(index);
+      }
+      if (trimmed.includes(' | ')) {
+        tableRows.push(trimmed);
+        return;
+      }
+      if (!trimmed) return;
+
+      const structural = this.parseStructuralLine(raw, index);
+      parsed.push(structural || {
+        kind: 'paragraph',
+        label: this.firstWords(trimmed, 'Detail'),
+        text: trimmed,
+        depth: 1,
+        index
+      });
+    });
+
+    flushTable(lines.length);
+    return parsed;
+  }
+
+  private parseStructuralLine(rawLine: string, index: number): {
+    kind: 'heading' | 'bullet';
+    label: string;
+    text: string;
+    depth: number;
+    index: number;
+  } | null {
+    const trimmed = rawLine.trim();
+    const indentDepth = Math.floor((rawLine.match(/^\s*/)?.[0].length || 0) / 2);
+
+    const slide = trimmed.match(/^\[SLIDE\s+\d+\]\s*(.+)$/i);
+    if (slide?.[1]) {
+      return { kind: 'heading', label: slide[1], text: trimmed, depth: 1, index };
+    }
+
+    const markdown = trimmed.match(/^(#{1,6})\s+(.+)$/);
+    if (markdown?.[2]) {
+      return { kind: 'heading', label: markdown[2], text: trimmed, depth: markdown[1].length, index };
+    }
+
+    const numbered = trimmed.match(/^(?:chapter|section|unit|module|part)?\s*(\d+(?:\.\d+){0,5})[.)]?\s+(.+)$/i);
+    if (numbered?.[2]) {
+      const label = numbered[2].trim();
+      const sectionDepth = numbered[1].split('.').length;
+      const looksLikeHeading = sectionDepth > 1 || /^[A-Z]/.test(label);
+      if (looksLikeHeading) {
+        return { kind: 'heading', label, text: trimmed, depth: sectionDepth, index };
+      }
+    }
+
+    const bullet = rawLine.match(/^(\s*)(?:[-*+•·∙◦▪]|\d+[.)]|[a-zA-Z][.)])\s+(.+)$/);
+    if (bullet?.[2]) {
+      return {
+        kind: 'bullet',
+        label: bullet[2],
+        text: bullet[2],
+        depth: Math.max(1, Math.floor((bullet[1]?.length || 0) / 2) + 1),
+        index
+      };
+    }
+
+    const clean = trimmed.replace(/\*\*(.*?)\*\*/g, '$1').trim();
+    if (this.isStandaloneHeading(clean)) {
+      return { kind: 'heading', label: clean.replace(/[:：]$/, ''), text: trimmed, depth: indentDepth + 1, index };
+    }
+
+    return null;
+  }
+
+  private isStandaloneHeading(text: string): boolean {
+    if (!text || text.length < 3 || text.length > 90 || /[.!?]$/.test(text)) return false;
+    if (/[:：]$/.test(text) && text.split(/\s+/).length <= 10) return true;
+    if (/^[A-Z][A-Z0-9\s/&-]{4,}$/.test(text)) return true;
+    return /^[A-Z][A-Za-z0-9/&-]*(?:\s+[A-Z][A-Za-z0-9/&-]*){1,7}$/.test(text);
+  }
+
+  private findCurrentSectionLevel(stack: { level: number; kind: string }[]): number {
+    for (let i = stack.length - 1; i >= 0; i--) {
+      if (stack[i].kind === 'heading' || stack[i].kind === 'table' || stack[i].kind === 'root') {
+        return stack[i].level;
+      }
+    }
+    return 0;
+  }
+
+  private appendDefinition(existing: string, addition: string): string {
+    const cleanAddition = this.cleanMarkdown(addition);
+    if (!cleanAddition) return existing || '';
+    if (!existing) return cleanAddition;
+    if (existing.includes(cleanAddition)) return existing;
+    return `${existing}\n${cleanAddition}`;
+  }
+
+  private compactEmptyDocumentBranches(root: any) {
+    const compact = (node: any) => {
+      node.children = (node.children || []).filter((child: any) => {
+        compact(child);
+        return child.label && (child.definition || child.children?.length);
+      });
+    };
+    compact(root);
+  }
+
+  private extractDocumentStructure(content: string): {
+    rootLabel: string;
+    rootDef: string;
+    sections: { title: string; body: string }[];
+  } {
+    const cleanContent = this.normalizeText(content);
+    const fallbackTitle = this.inferTitle(cleanContent, this.fileName || 'Document Mind Map');
+    const sections = this.extractStrictDocumentSections(cleanContent, fallbackTitle);
+    const usefulSections = sections
+      .filter(section => section.title && (section.body.trim().length > 25 || sections.length <= 3))
+      .slice(0, 8);
+
+    return {
+      rootLabel: fallbackTitle.slice(0, 70),
+      rootDef: this.makeDefinition(fallbackTitle, cleanContent),
+      sections: usefulSections.length ? usefulSections : this.chunkDocumentIntoSections(cleanContent, fallbackTitle)
+    };
+  }
+
+  private extractStrictDocumentSections(content: string, fallbackTitle: string): { title: string; body: string }[] {
+    const lines = content.split('\n');
+    const sections: { title: string; body: string[] }[] = [];
+    let current: { title: string; body: string[] } | null = null;
+
+    const flush = () => {
+      if (!current) return;
+      const body = current.body.join('\n').trim();
+      if (body) sections.push(current);
+    };
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) {
+        if (current) current.body.push('');
+        continue;
+      }
+
+      const heading = this.extractStrictDocumentHeading(line);
+      if (heading) {
+        flush();
+        current = { title: heading, body: [] };
+        continue;
+      }
+
+      if (!current) current = { title: fallbackTitle, body: [] };
+      current.body.push(line);
+    }
+    flush();
+
+    return sections.map(section => ({
+      title: this.cleanLocalLabel(section.title),
+      body: section.body.join('\n').trim()
+    }));
+  }
+
+  private extractStrictDocumentHeading(line: string): string | null {
+    const trimmed = line.trim();
+    if (!trimmed || /^[-*+]\s+/.test(trimmed)) return null;
+
+    const slide = trimmed.match(/^\[SLIDE\s+\d+\]\s*(.+)$/i);
+    if (slide?.[1]) return slide[1].trim();
+
+    const markdown = trimmed.match(/^#{1,6}\s+(.+)$/);
+    if (markdown?.[1]) return markdown[1].trim();
+
+    const numbered = trimmed.match(/^(?:chapter|section|unit|module|part)?\s*\d+(?:\.\d+){0,2}[.)]?\s+(.+)$/i);
+    if (numbered?.[1] && numbered[1].length <= 90 && /^[A-Z]/.test(numbered[1].trim())) return numbered[1].trim();
+
+    const clean = trimmed.replace(/\*\*(.*?)\*\*/g, '$1').trim();
+    if (clean.length < 3 || clean.length > 90) return null;
+    if (/[:：]$/.test(clean) && clean.split(/\s+/).length <= 10) return clean.replace(/[:：]$/, '').trim();
+    if (/^[A-Z][A-Z0-9\s/&-]{4,}$/.test(clean)) return clean;
+    if (/^[A-Z][A-Za-z0-9/&-]*(?:\s+[A-Z][A-Za-z0-9/&-]*){1,6}$/.test(clean) && !/[.!?]$/.test(clean)) return clean;
+
+    return null;
+  }
+
+  private chunkDocumentIntoSections(content: string, fallbackTitle: string): { title: string; body: string }[] {
+    const paragraphs = content
+      .split(/\n\s*\n+/)
+      .map(p => p.trim())
+      .filter(p => p.length > 40);
+
+    const chunks = paragraphs.length ? paragraphs : this.splitSentences(content);
+    return chunks.slice(0, 6).map((chunk, index) => ({
+      title: index === 0 ? fallbackTitle : this.cleanLocalLabel(this.firstWords(chunk, `Topic ${index + 1}`)),
+      body: chunk
+    }));
   }
 
   private splitContentIntoSections(content: string, branches: string[]): string[] {
+    const normalizedBranches = branches.map(branch => this.cleanBranchCandidate(branch));
+    const localSections = this.extractLocalSections(content, normalizedBranches[0] || 'Document');
+    const usedLocalSections = new Set<number>();
     const lower = content.toLowerCase();
-    const positions: number[] = branches.map(branch => {
-      const words = branch.toLowerCase().split(' ');
-      for (let len = words.length; len >= 1; len--) {
-        const idx = lower.indexOf(words.slice(0, len).join(' '));
-        if (idx !== -1) return idx;
-      }
-      return -1;
-    });
+    const positions: number[] = normalizedBranches.map(branch => this.findTopicPosition(lower, branch));
 
     const indexed = positions
       .map((pos, i) => ({ pos, i }))
@@ -349,11 +694,76 @@ export class GenerateComponent implements OnInit {
       sections[indexed[k].i] = content.slice(start, end);
     }
 
-    branches.forEach((_, i) => {
-      if (!sections[i]) sections[i] = content.slice(0, 6000);
+    normalizedBranches.forEach((branch, i) => {
+      if (sections[i]) return;
+      const branchKey = this.normalizeTopicKey(branch);
+      const localIdx = localSections.findIndex((section, idx) => {
+        if (usedLocalSections.has(idx)) return false;
+        const titleKey = this.normalizeTopicKey(section.title);
+        return titleKey === branchKey || titleKey.includes(branchKey) || branchKey.includes(titleKey);
+      });
+      if (localIdx !== -1) {
+        usedLocalSections.add(localIdx);
+        sections[i] = `${localSections[localIdx].title}\n${localSections[localIdx].body}`;
+      }
     });
 
     return sections;
+  }
+
+  private findTopicPosition(lowerContent: string, topic: string): number {
+    const cleanTopic = this.cleanBranchCandidate(topic).toLowerCase();
+    if (!cleanTopic) return -1;
+    const escaped = cleanTopic.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const headingPattern = new RegExp(
+      `(^|\\n)\\s*(?:#{1,6}\\s*)?(?:\\d+(?:\\.\\d+)*[.)]?\\s*)?${escaped}(?:\\s*[:\\-–—]?\\s*)(?=\\n|$)`,
+      'i'
+    );
+    const headingMatch = lowerContent.match(headingPattern);
+    if (headingMatch?.index !== undefined) return headingMatch.index;
+    return lowerContent.indexOf(cleanTopic);
+  }
+
+  private cleanBranchCandidate(value: string): string {
+    return this.normalizeText(value)
+      .replace(/^[#>\s]+/, '')
+      .replace(/^(?:[-*+•]|\d+(?:\.\d+)*[.)]?|[A-Za-z][.)])\s+/, '')
+      .replace(/\s*[:\-–—]\s*$/, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private normalizeTopicKey(value: string): string {
+    return this.cleanBranchCandidate(value)
+      .toLowerCase()
+      .replace(/&/g, ' and ')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\b(?:the|a|an|and|or|of|to|in|for|with|on|by)\b/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private isGenericBranch(value: string): boolean {
+    const key = this.normalizeTopicKey(value);
+    if (!key) return true;
+
+    const genericKeys = new Set([
+      'overview',
+      'introduction',
+      'summary',
+      'conclusion',
+      'contents',
+      'table contents',
+      'references',
+      'bibliography',
+      'appendix',
+      'notes',
+      'slide',
+      'section',
+      'topic'
+    ]);
+
+    return genericKeys.has(key) || key.length < 3 || /^\d+$/.test(key);
   }
 
   private async extractFullOutline(content: string): Promise<string> {
@@ -388,14 +798,15 @@ For all other text: extract headings, topics, subtopics exactly as they appear.`
       const lines = outline.split('\n').filter(l => l.trim().length > 0);
       
       // Find root label: first substantial line
-      const rootLabel = lines.find(l => l.length > 5 && !l.startsWith('##')) || 'Document';
+      const rootLabel = this.cleanBranchCandidate(lines.find(l => l.length > 5 && !l.startsWith('##')) || 'Document');
       
       // Extract section headers (lines starting with # or all-caps or numbered)
       const branches: string[] = [];
       const seen = new Set<string>();
       
       for (const line of lines) {
-        let section = line.trim();
+        if (this.getOutlineDepth(line) > 0) continue;
+        let section = this.cleanBranchCandidate(line.trim());
         
         // Strip markdown headers
         section = section.replace(/^#+\s+/, '').trim();
@@ -403,9 +814,10 @@ For all other text: extract headings, topics, subtopics exactly as they appear.`
         // Filter: skip empty, keep if 3-50 chars and looks like a heading
         if (section.length >= 3 && section.length <= 50) {
           const lower = section.toLowerCase();
+          const key = this.normalizeTopicKey(section);
           
           // Skip common non-heading patterns
-          if (lower.includes('table') || lower.includes('figure') || lower.includes('page')) {
+          if (this.isGenericBranch(section) || lower.includes('table') || lower.includes('figure') || lower.includes('page')) {
             continue;
           }
           
@@ -414,9 +826,9 @@ For all other text: extract headings, topics, subtopics exactly as they appear.`
                            /^\d+\./.test(section) ||          // numbered
                            section.split(' ').length <= 5;     // short phrase
           
-          if (isHeading && !seen.has(lower)) {
+          if (isHeading && key && !seen.has(key) && key !== this.normalizeTopicKey(rootLabel)) {
             branches.push(section);
-            seen.add(lower);
+            seen.add(key);
           }
         }
       }
@@ -456,6 +868,12 @@ For all other text: extract headings, topics, subtopics exactly as they appear.`
       console.error('[Branches Extract Error]', e);
       return null;
     }
+  }
+
+  private getOutlineDepth(line: string): number {
+    const match = line.match(/^(\s*)(?:[-*+]|\d+[.)])\s+/);
+    if (!match) return 0;
+    return Math.floor(match[1].replace(/\t/g, '  ').length / 2);
   }
 
   private extractSection(content: string, branchName: string): string {
@@ -503,8 +921,13 @@ ${visualNote}
 
 RULES:
 - Extract ONLY content from this section — no external knowledge
+- Preserve the document hierarchy exactly: section heading -> subheading -> nested points
+- Do not repeat "${branchName}" as a child node. Its direct children must be the next-level subtopics from this section.
+- If a line is a subtopic in the document, keep it under its parent instead of promoting it to a branch.
 - Each concept must appear ONCE — merge duplicates
 - Labels: exact terms from content, max 6 words
+- Labels must not include numbering, bullets, dots, dashes, or list prefixes
+- Keep children in the correct reading order. The app adds numbering automatically.
 - Definitions: 2-4 sentences, factual, strictly from the section content
 
 Return ONLY valid JSON (no markdown, no code fences):
@@ -538,60 +961,81 @@ Return ONLY valid JSON (no markdown, no code fences):
     } catch (e: any) {
       const errorMsg = (e as any)?.message || String(e);
       console.error(`[Branch Build Error] "${branchName}": ${errorMsg}`);
-      // Return node with at least basic structure
-      return { id: `branch_${colorIdx}_${Math.random().toString(36).slice(2)}`, label: branchName, level: 1, definition: '', children: [], color, expanded: false };
+      return this.initNodeWithColor(this.buildLocalBranch(branchName, section, 1), color, `branch_${colorIdx}`);
     }
   }
 
   // ── SINGLE CALL (text / youtube) ─────────────────────────────────────────────
   private async generateSingleCall(content: string, isContentBased: boolean) {
+    this.sourceContent = content;
     this.progress = 'Building mind map...';
-    const sourceRule = isContentBased
-      ? `STRICT: Extract ONLY topics from this content.\n\nCONTENT:\n${content.slice(0, 10000)}\n\nEND`
-      : `Generate a professional mind map for: "${content}"`;
 
-    const prompt = `You are a professional knowledge architect. ${sourceRule}
+    // Determine if this is a short topic keyword vs full content
+    const isShortTopic = !isContentBased && content.trim().split(/\s+/).length <= 15;
 
-Build a complete 3-level mind map:
-- Level 0: 1 root node (the main subject)
-- Level 1: 4–6 main branches
-- Level 2: 3–5 subtopics per branch
-- Level 3: 2–4 detail points per subtopic
+    const prompt = isShortTopic
+      // ── SHORT TOPIC (e.g. "Software Testing", "Machine Learning") ──────────
+      ? `You are a professional knowledge architect. Create a comprehensive, accurate mind map about: "${content}"
 
-CRITICAL — Every "definition" field MUST be 3–5 complete sentences explaining:
-1. What this concept is
-2. How it works or its key characteristics
-3. Why it matters with a real example
-NEVER leave "definition" empty or as a placeholder.
+RULES:
+- Root label = exactly the topic name: "${content}"
+- Branches MUST be the actual key concepts, categories, types, or aspects of "${content}" specifically
+- Every branch and subtopic must be directly related to "${content}" — no generic filler
+- Labels: 2-5 words, precise terminology from this domain
+- Definitions: 3-5 sentences — what it is, how it works, why it matters, with a real example from "${content}"
 
-Return ONLY valid JSON — no markdown fences, no code blocks, no extra text.
-The JSON must follow this exact shape:
+Return ONLY valid JSON (no markdown, no code fences):
 {
   "root": {
-    "id": "root",
-    "label": "Main Subject",
-    "level": 0,
-    "definition": "Full 3-5 sentence overview of the main subject.",
+    "id": "root", "label": "${content}", "level": 0,
+    "definition": "3-5 sentence overview of ${content}.",
     "children": [
       {
-        "id": "b1",
-        "label": "Branch Name",
-        "level": 1,
-        "definition": "Full 3-5 sentence explanation of this branch.",
+        "id": "b1", "label": "Key Concept from ${content}", "level": 1,
+        "definition": "3-5 sentences about this aspect of ${content}.",
         "children": [
           {
-            "id": "b1a",
-            "label": "Subtopic Name",
-            "level": 2,
-            "definition": "Full 3-5 sentence explanation of this subtopic.",
+            "id": "b1a", "label": "Subtopic", "level": 2,
+            "definition": "3-5 sentence explanation.",
             "children": [
-              {
-                "id": "b1a1",
-                "label": "Detail Point",
-                "level": 3,
-                "definition": "Full 3-5 sentence explanation of this detail.",
-                "children": []
-              }
+              { "id": "b1a1", "label": "Detail", "level": 3, "definition": "3-5 sentences.", "children": [] }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}`
+      // ── LONG TEXT / CONTENT-BASED (file, long text) ─────────────────────────
+      : `You are a professional knowledge architect. Analyze this content and build a mind map that STRICTLY follows what is written in it.
+
+CONTENT TO ANALYZE:
+${content.slice(0, 12000)}
+
+STRICT RULES:
+- Root label = the main topic/title found in the content above
+- Branches = the actual main sections, topics, or themes FROM THE CONTENT — not invented ones
+- Every node label must come from actual terms, headings, or concepts in the content
+- Every definition must be based on information from the content — no external knowledge
+- DO NOT add generic branches like "Overview", "Best Practices", "Future Trends" unless those exact topics appear in the content
+- Labels: 2-5 words, exactly as they appear in the content
+- Definitions: 3-5 sentences using only information from the content above
+
+Return ONLY valid JSON (no markdown, no code fences):
+{
+  "root": {
+    "id": "root", "label": "Main Topic from Content", "level": 0,
+    "definition": "3-5 sentence overview based on the content.",
+    "children": [
+      {
+        "id": "b1", "label": "Section from Content", "level": 1,
+        "definition": "3-5 sentences from the content.",
+        "children": [
+          {
+            "id": "b1a", "label": "Subtopic from Content", "level": 2,
+            "definition": "3-5 sentences from the content.",
+            "children": [
+              { "id": "b1a1", "label": "Detail from Content", "level": 3, "definition": "3-5 sentences.", "children": [] }
             ]
           }
         ]
@@ -605,16 +1049,186 @@ The JSON must follow this exact shape:
       res = await this.ai.generateWithGroq(prompt).toPromise();
     } catch (e: any) {
       console.error('[AI Request Failed]', e);
-      this.errorMsg = this.ai.proxyErrorMessage(e);
+      this.buildLocalMindMap(content, isContentBased);
       return;
     }
 
     const text = this.extractTextFromResponse(res);
     if (!text || this.ai.isDemoFallback(text)) {
-      this.errorMsg = this.ai.proxyErrorMessage({ status: 0 });
+      this.buildLocalMindMap(content, isContentBased);
       return;
     }
     this.parseRoot(text);
+    if (!this.rootNode || this.errorMsg) {
+      this.buildLocalMindMap(content, isContentBased);
+    }
+  }
+
+  private buildLocalMindMap(content: string, isContentBased: boolean) {
+    const cleanContent = this.normalizeText(content);
+    this.sourceContent = cleanContent;
+    const title = isContentBased
+      ? this.inferTitle(cleanContent, this.fileName || 'Document Mind Map')
+      : this.toTitleCase(cleanContent).slice(0, 70) || 'Mind Map';
+    const sections = this.extractLocalSections(cleanContent, title);
+    const root = {
+      id: 'root',
+      label: title,
+      level: 0,
+      definition: this.makeDefinition(title, cleanContent),
+      children: sections.slice(0, 8).map((section, i) =>
+        this.buildLocalBranch(section.title, section.body, 1, i)
+      )
+    };
+    this.rootNode = this.sanitizeMindTree(this.initNode(root, 0));
+    this.rootNode.expanded = true;
+    this.errorMsg = '';
+    this.progress = 'Built mind map from local content analysis.';
+  }
+
+  private buildLocalBranch(title: string, body: string, level: number, index = 0): any {
+    const points = this.extractLocalPoints(body);
+    const childGroups = points.length ? points : this.splitSentences(body).slice(0, 5);
+    return {
+      id: `local_${level}_${index}`,
+      label: this.cleanLocalLabel(title || `Section ${index + 1}`),
+      level,
+      definition: this.makeDefinition(title, body),
+      children: childGroups.slice(0, 6).map((point, i) => {
+        const detailSource = this.findContextForPoint(body, point);
+        const details = this.extractLocalPoints(detailSource)
+          .filter(d => d.toLowerCase() !== point.toLowerCase())
+          .slice(0, 4);
+        return {
+          id: `local_${level + 1}_${index}_${i}`,
+          label: this.cleanLocalLabel(point),
+          level: level + 1,
+          definition: this.makeDefinition(point, detailSource || body),
+          children: details.map((detail, di) => ({
+            id: `local_${level + 2}_${index}_${i}_${di}`,
+            label: this.cleanLocalLabel(detail),
+            level: level + 2,
+            definition: this.makeDefinition(detail, detailSource || body),
+            children: []
+          }))
+        };
+      })
+    };
+  }
+
+  private extractLocalSections(content: string, fallbackTitle: string): { title: string; body: string }[] {
+    const lines = content.split('\n').map(l => l.trim()).filter(Boolean);
+    const sections: { title: string; body: string }[] = [];
+    let current: { title: string; body: string[] } | null = null;
+
+    const flush = () => {
+      if (current) sections.push({ title: current.title, body: current.body.join('\n') });
+    };
+
+    for (const line of lines) {
+      const heading = this.extractHeading(line);
+      if (heading) {
+        flush();
+        current = { title: heading, body: [] };
+      } else if (current) {
+        current.body.push(line);
+      } else {
+        current = { title: fallbackTitle, body: [line] };
+      }
+    }
+    flush();
+
+    if (sections.length > 1) return sections.filter(s => s.body.trim().length > 20 || s.title !== fallbackTitle);
+
+    const paragraphs = content.split(/\n\s*\n|(?<=\.)\s+(?=[A-Z][A-Za-z ]{8,60}:)/).map(p => p.trim()).filter(p => p.length > 30);
+    return paragraphs.slice(0, 8).map((p, i) => ({
+      title: this.cleanLocalLabel(this.extractHeading(p.split('\n')[0]) || this.firstWords(p, i === 0 ? fallbackTitle : `Topic ${i + 1}`)),
+      body: p
+    }));
+  }
+
+  private extractHeading(line: string): string | null {
+    const clean = line
+      .replace(/^#{1,6}\s*/, '')
+      .replace(/^\s*(?:[-*+]|\d+[.)])\s*/, '')
+      .replace(/\*\*(.*?)\*\*/g, '$1')
+      .trim();
+    if (!clean || clean.length > 90) return null;
+    if (/[:：]$/.test(clean)) return clean.replace(/[:：]$/, '');
+    if (/^\d+(?:\.\d+)*\s+/.test(clean)) return clean.replace(/^\d+(?:\.\d+)*\s+/, '');
+    if (/^[A-Z][A-Z0-9\s/&-]{4,}$/.test(clean)) return clean;
+    if (clean.split(/\s+/).length <= 7 && !/[.!?]$/.test(clean)) return clean;
+    return null;
+  }
+
+  private extractLocalPoints(text: string): string[] {
+    const points: string[] = [];
+    for (const line of text.split('\n')) {
+      const m = line.trim().match(/^(?:[-*+]|\d+[.)])\s+(.+)/);
+      if (m) points.push(m[1]);
+    }
+    if (points.length >= 2) return this.uniqueLabels(points);
+    return this.uniqueLabels(this.splitSentences(text).slice(0, 8));
+  }
+
+  private splitSentences(text: string): string[] {
+    return this.normalizeText(text)
+      .split(/(?<=[.!?])\s+|\n+/)
+      .map(s => s.trim())
+      .filter(s => s.length >= 20 && s.length <= 220);
+  }
+
+  private findContextForPoint(body: string, point: string): string {
+    const sentences = this.splitSentences(body);
+    const keyWords = point.toLowerCase().split(/\W+/).filter(w => w.length > 3).slice(0, 4);
+    const idx = sentences.findIndex(s => keyWords.some(w => s.toLowerCase().includes(w)));
+    if (idx === -1) return sentences.slice(0, 3).join(' ');
+    return sentences.slice(Math.max(0, idx - 1), idx + 3).join(' ');
+  }
+
+  private makeDefinition(label: string, source: string): string {
+    const sentences = this.splitSentences(source).slice(0, 3);
+    if (sentences.length) return sentences.join(' ');
+    return `${this.cleanLocalLabel(label)} is a topic identified from the provided content. It is included in the mind map because the source text presents it as part of the overall structure.`;
+  }
+
+  private inferTitle(content: string, fallback: string): string {
+    const firstHeading = content.split('\n').map(l => this.extractHeading(l)).find(Boolean);
+    return this.cleanLocalLabel(firstHeading || this.firstWords(content, fallback));
+  }
+
+  private firstWords(text: string, fallback: string): string {
+    const words = this.normalizeText(text).split(/\s+/).filter(Boolean).slice(0, 7).join(' ');
+    return words || fallback;
+  }
+
+  private cleanLocalLabel(text: string): string {
+    return this.cleanNodeLabel(text)
+      .replace(/[:：]\s*$/, '')
+      .split(/\s+/)
+      .slice(0, 8)
+      .join(' ')
+      .trim() || 'Topic';
+  }
+
+  private uniqueLabels(items: string[]): string[] {
+    const seen = new Set<string>();
+    return items
+      .map(i => this.cleanLocalLabel(i))
+      .filter(i => {
+        const key = i.toLowerCase();
+        if (key.length < 3 || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  }
+
+  private normalizeText(text: string): string {
+    return (text || '').replace(/\r/g, '').replace(/[ \t]{2,}/g, ' ').trim();
+  }
+
+  private toTitleCase(text: string): string {
+    return text.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
   }
 
   /** Generate a demo mind map with proper structure when API fails */
@@ -692,26 +1306,40 @@ The JSON must follow this exact shape:
   }
 
   // ── TOGGLE / SELECT ──────────────────────────────────────────────────────────
-  async toggleNode(node: MindNode) {
-    await this.selectNode(node);
-    if (node.children.length > 0) node.expanded = !node.expanded;
+  toggleNode(node: MindNode) {
+    const sameNode = this.selectedNode?.id === node.id;
+    if (!sameNode) {
+      void this.selectNode(node);
+      if (node.children.length > 0) node.expanded = true;
+    } else if (node.children.length > 0) {
+      node.expanded = !node.expanded;
+    } else {
+      void this.selectNode(node);
+    }
   }
 
   async selectNode(node: MindNode) {
-    if (this.loadingDefinition) return;
     this.selectedNode = node;
-    if (node.definition && node.definition.trim().length >= 40) return;
+    if (this.hasUsableDefinition(node)) return;
 
+    const hasFileSource = !!this.fileContent?.trim();
+    const hasYoutubeSource = !!this.youtubeVideoUrl;
+    if (!hasFileSource && !hasYoutubeSource) {
+      node.definition = this.makeLocalNodeDefinition(node);
+      return;
+    }
+
+    const requestId = ++this.definitionRequestId;
     this.loadingDefinition = true;
 
     const root = this.rootNode?.label || 'this subject';
-    const section = this.fileContent ? this.extractSection(this.fileContent, node.label) : '';
+    const section = this.getNodeSourceSection(node);
     const hasTable = section.includes('[TABLE_START]');
     const hasSlide = section.includes('[SLIDE');
     const cleanSection = section
       .replace(/\[TABLE_START\]/g, '\n[TABLE]\n')
       .replace(/\[TABLE_END\]/g, '\n[/TABLE]\n')
-      .slice(0, 5000);  // increased from 3000
+      .slice(0, 5000);
 
     const visualNote = (hasTable || hasSlide)
       ? `\n\nThis content includes ${hasTable ? 'a table/chart ([TABLE]...[/TABLE])' : ''}${hasSlide ? ' slide content' : ''}. Present any table data as a markdown pipe table:\n| Header 1 | Header 2 |\n|----------|----------|\n| Value    | Value    |`
@@ -719,11 +1347,12 @@ The JSON must follow this exact shape:
 
     const ctx = cleanSection ? `\n\nSource content:\n${cleanSection}` : '';
 
-    // YouTube map — use video context for definitions
-    if (this.youtubeVideoUrl && !cleanSection) {
-      try {
+    try {
+      if (hasYoutubeSource && !cleanSection.trim()) {
         const videoId = this.yt.getVideoId(this.youtubeVideoUrl) || '';
         const context = videoId ? await this.yt.getFullVideoContext(videoId).toPromise() as string : '';
+        if (requestId !== this.definitionRequestId) return;
+
         const defPrompt = `Based on this YouTube video data, write a detailed explanation for "${node.label}".
 
 VIDEO DATA:
@@ -736,16 +1365,20 @@ Write 3 paragraphs:
 
 Only use information from the video data above.`;
         const res: any = await this.ai.generateWithGroq(defPrompt).toPromise();
-        node.definition = this.extractTextFromResponse(res) || 'No definition available.';
-      } catch (e) {
-        console.error('[YouTube Definition Error]', e);
-        node.definition = this.ai.proxyErrorMessage(e);
+        if (requestId !== this.definitionRequestId) return;
+        const text = this.extractTextFromResponse(res);
+        node.definition = text && !this.ai.isDemoFallback(text)
+          ? text
+          : this.makeLocalNodeDefinition(node);
+        return;
       }
-      this.loadingDefinition = false;
-      return;
-    }
 
-    const prompt = `You are an expert in "${root}". Write a clear, accurate explanation for "${node.label}" based strictly on the source content below.${visualNote}
+      if (!ctx.trim()) {
+        node.definition = this.makeLocalNodeDefinition(node);
+        return;
+      }
+
+      const prompt = `You are an expert in "${root}". Write a clear, accurate explanation for "${node.label}" based strictly on the source content below.${visualNote}
 
 Paragraph 1 — What it is: Define "${node.label}" precisely using the source content.
 Paragraph 2 — Key details: Explain the mechanism, data, or key characteristics.
@@ -753,14 +1386,21 @@ Paragraph 3 — Significance/Example: Explain why it matters or give a concrete 
 
 Rules: Based ONLY on source content. Use markdown pipe table for any tabular data. Plain paragraphs otherwise.`;
 
-    try {
       const res: any = await this.ai.generateWithGroq(prompt).toPromise();
-      node.definition = this.extractTextFromResponse(res) || 'No definition available.';
+      if (requestId !== this.definitionRequestId) return;
+      const text = this.extractTextFromResponse(res);
+      node.definition = text && !this.ai.isDemoFallback(text)
+        ? text
+        : this.makeLocalNodeDefinition(node);
     } catch (e: any) {
       console.error('[Definition Error]', e);
-      node.definition = this.ai.proxyErrorMessage(e);
+      if (requestId !== this.definitionRequestId) return;
+      node.definition = this.makeLocalNodeDefinition(node);
+    } finally {
+      if (requestId === this.definitionRequestId) {
+        this.loadingDefinition = false;
+      }
     }
-    this.loadingDefinition = false;
   }
 
   // ── PARSE ────────────────────────────────────────────────────────────────────
@@ -856,7 +1496,7 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
         return;
       }
 
-      this.rootNode = this.initNode(rawNode, 0);
+      this.rootNode = this.sanitizeMindTree(this.initNode(rawNode, 0));
       this.rootNode.expanded = true;
     } catch (e) {
       console.error('[ParseRoot Error]', e);
@@ -895,13 +1535,24 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
       .trim();
   }
 
-  private initNodeWithColor(raw: any, color: string, parentId = ''): MindNode {
-    const cleanLabel = this.cleanMarkdown(raw.label || '');
+  private cleanNodeLabel(text: string): string {
+    const cleaned = this.cleanMarkdown(text)
+      .replace(/^[\s"'`([{]*((\d+|[a-zA-Z]|[ivxlcdmIVXLCDM]+)[.)]|\d+(?:\.\d+)+\.?|\d+\s+|[-*+•·∙◦▪➔➜])\s*/g, '')
+      .replace(/^[\s"'`([{]*((\d+|[a-zA-Z]|[ivxlcdmIVXLCDM]+)[.)]|\d+(?:\.\d+)+\.?|\d+\s+|[-*+•·∙◦▪➔➜])\s*/g, '')
+      .replace(/^\s*[:.)-]+\s*/, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    return cleaned || 'Untitled';
+  }
+
+  private initNodeWithColor(raw: any, color: string, parentId = '', orderPath = ''): MindNode {
+    const cleanLabel = this.cleanNodeLabel(raw.label || '');
     const cleanDef = this.cleanMarkdown(raw.definition || '');
     const node: MindNode = {
       id: `${parentId}_${cleanLabel.replace(/\s+/g, '_').slice(0, 20)}_${Math.random().toString(36).slice(2, 6)}`,
       label: cleanLabel,
       level: raw.level ?? 0,
+      orderPath,
       definition: cleanDef,
       children: [],
       color,
@@ -914,7 +1565,8 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
           this.initNodeWithColor(
             { ...c, level: c.level ?? node.level + 1 },
             node.level === 0 ? this.COLORS[i % this.COLORS.length] : color,
-            node.id
+            node.id,
+            orderPath ? `${orderPath}.${i + 1}` : `${i + 1}`
           )
         )
         .filter((child: MindNode) => {
@@ -928,6 +1580,80 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
   }
 
   // ── DEFINITION PARSER ─────────────────────────────────────────────────────────
+  private sanitizeMindTree(root: MindNode): MindNode {
+    const sanitizeNode = (node: MindNode, ancestors: Set<string>): MindNode => {
+      const currentKey = this.normalizeNodeKey(node.label);
+      const nextAncestors = new Set(ancestors);
+      if (currentKey) nextAncestors.add(currentKey);
+
+      const merged = new Map<string, MindNode>();
+      const ordered: MindNode[] = [];
+
+      for (const rawChild of node.children || []) {
+        const child = sanitizeNode(rawChild, nextAncestors);
+        const childKey = this.normalizeNodeKey(child.label);
+        if (!childKey) continue;
+
+        if (childKey === currentKey || ancestors.has(childKey)) {
+          for (const grandChild of child.children || []) {
+            const grandKey = this.normalizeNodeKey(grandChild.label);
+            if (!grandKey || grandKey === currentKey || ancestors.has(grandKey)) continue;
+            const existingGrand = merged.get(grandKey);
+            if (existingGrand) this.mergeMindNodes(existingGrand, grandChild);
+            else {
+              merged.set(grandKey, grandChild);
+              ordered.push(grandChild);
+            }
+          }
+          continue;
+        }
+
+        const existing = merged.get(childKey);
+        if (existing) this.mergeMindNodes(existing, child);
+        else {
+          merged.set(childKey, child);
+          ordered.push(child);
+        }
+      }
+
+      node.children = ordered;
+      return node;
+    };
+
+    const sanitized = sanitizeNode(root, new Set<string>());
+    this.refreshNodeMeta(sanitized, 0, '', '#38bdf8');
+    return sanitized;
+  }
+
+  private mergeMindNodes(target: MindNode, source: MindNode) {
+    if (!target.definition && source.definition) target.definition = source.definition;
+    for (const child of source.children || []) {
+      const key = this.normalizeNodeKey(child.label);
+      if (!key) continue;
+      const existing = target.children.find(c => this.normalizeNodeKey(c.label) === key);
+      if (existing) this.mergeMindNodes(existing, child);
+      else target.children.push(child);
+    }
+  }
+
+  private refreshNodeMeta(node: MindNode, level: number, orderPath: string, color: string) {
+    node.level = level;
+    node.orderPath = orderPath;
+    node.color = color;
+    node.children.forEach((child, i) => {
+      const childOrder = orderPath ? `${orderPath}.${i + 1}` : `${i + 1}`;
+      const childColor = level === 0 ? this.COLORS[i % this.COLORS.length] : color;
+      this.refreshNodeMeta(child, level + 1, childOrder, childColor);
+    });
+  }
+
+  private normalizeNodeKey(label: string): string {
+    return this.cleanNodeLabel(label)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  }
+
   /** Parse definition text into structured blocks for rich rendering */
   parseDefinition(text: string): DefinitionBlock[] {
     const blocks: DefinitionBlock[] = [];
@@ -1110,12 +1836,6 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
 
     const lines: PdfLine[] = [];
 
-    // Add node definition if present
-    if (nodeToExport.definition && nodeToExport.definition.trim().length > 0) {
-      lines.push({ type: 'para', text: nodeToExport.definition });
-      lines.push({ type: 'divider' });
-    }
-
     const renderNode = (node: MindNode, depth: number) => {
       // Render node label based on depth - NO BULLETS, only headings and paragraphs
       if (depth === 0) {
@@ -1177,12 +1897,13 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
 
   loadSaved(map: any) {
     try {
-      const root = JSON.parse(JSON.stringify(map.data)) as MindNode;
-      this.rootNode = this.initNode(root, 0);
-      this.rootNode.expanded = true;
+      this.rootNode = this.hydrateSavedRoot(map.data);
       this.showSaved = false;
       this.selectedNode = null;
       this.errorMsg = '';
+      this.sourceContent = '';
+      this.fileContent = '';
+      this.youtubeVideoUrl = '';
       this.currentVideoMeta = map.videoMeta || null;
       this.progress = `✓ Loaded: "${map.title}"`;
       setTimeout(() => this.progress = '', 2000);
@@ -1262,6 +1983,7 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
         };
         this.currentVideoMeta = videoMeta;
         context = await this.yt.getFullVideoContext(videoId).toPromise() as string || '';
+        this.sourceContent = context || videoMeta.description || '';
       }
     } catch (e) {
       console.error('[YouTube Metadata Error]', e);
@@ -1307,6 +2029,8 @@ CRITICAL RULES:
 - If no chapters, use TAGS and DESCRIPTION topics for branches
 - All content must come from the video data — no generic topics
 - Definitions: 3-4 sentences based on video data
+- Labels must be plain concept names only. Do not include numbering or bullet prefixes.
+- Keep child arrays in logical viewing order. The app adds numbering automatically.
 
 --- VIDEO DATA ---
 ${context}
@@ -1340,6 +2064,8 @@ CRITICAL RULES:
 - Create branches covering the specific subject matter
 - Definitions: 3-5 sentences, detailed and specific
 - 5-7 branches, 3-4 subtopics each, 2-3 details each
+- Labels must be plain concept names only. Do not include numbering or bullet prefixes.
+- Keep child arrays in logical viewing order. The app adds numbering automatically.
 
 Return ONLY valid JSON (no markdown, no code fences):
 {
@@ -1365,18 +2091,45 @@ Return ONLY valid JSON (no markdown, no code fences):
       const text = this.extractTextFromResponse(res);
       if (!text) throw new Error('empty response');
       this.parseRoot(text);
+      if (context) this.sourceContent = context;
+      if (!this.rootNode || this.errorMsg) {
+        this.buildLocalYoutubeMindMap(videoMeta, context);
+      }
     } catch (e: any) {
       if (this.errorMsg) return; // already set a specific message
       const status = e?.status;
       console.error('[YouTube Mind Map Error]', status, e);
-      if (status === 401 || status === 403) {
-        this.errorMsg = 'API key is invalid or expired. Please update the API key in ai.service.ts.';
-      } else if (status === 429) {
-        this.errorMsg = 'Rate limit reached. Please wait a moment and try again.';
-      } else {
-        this.errorMsg = 'Mind map generation failed. Try again.';
-      }
+      this.buildLocalYoutubeMindMap(videoMeta, context);
     }
+  }
+
+  private buildLocalYoutubeMindMap(videoMeta: VideoMeta, context: string) {
+    const title = videoMeta.title || 'YouTube Video';
+    const chapterText = videoMeta.chapters.map(c => `${c.title}. ${c.time}`).join('\n');
+    const tagText = videoMeta.tags.join('\n');
+    const source = [context, videoMeta.description, chapterText, tagText].filter(Boolean).join('\n\n');
+    this.sourceContent = source;
+    const sectionSeed = videoMeta.chapters.length
+      ? videoMeta.chapters.map(c => ({ title: c.title, body: source }))
+      : this.extractLocalSections(source || title, title);
+
+    const root = {
+      id: 'root',
+      label: title,
+      level: 0,
+      definition: [
+        videoMeta.channel ? `This video is from ${videoMeta.channel}.` : '',
+        videoMeta.description ? videoMeta.description.slice(0, 350) : `This mind map is built from the available metadata for "${title}".`
+      ].filter(Boolean).join(' '),
+      children: sectionSeed.slice(0, 7).map((section, i) =>
+        this.buildLocalBranch(section.title, section.body || source || title, 1, i)
+      )
+    };
+
+    this.rootNode = this.initNode(root, 0);
+    this.rootNode.expanded = true;
+    this.errorMsg = '';
+    this.progress = 'Built YouTube mind map from available video metadata.';
   }
 
   /** Extract chapters as structured list from description text */
