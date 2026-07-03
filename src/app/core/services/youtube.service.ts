@@ -94,7 +94,7 @@ export class YoutubeService {
   private readonly SEARCH_URL = '/api/youtube-search';
   private readonly VIDEO_URL  = '/api/youtube-details';
   private readonly OEMBED_URL = 'https://www.youtube.com/oembed';
-  private readonly GROQ_URL   = 'https://api.groq.com/openai/v1/chat/completions';
+  private readonly GROQ_URL   = '/groq/openai/v1/chat/completions';
   private readonly GROQ_KEY   = environment.groqApiKey || '';
 
   constructor(private http: HttpClient) {}

@@ -22,7 +22,22 @@ export class AiService {
 
   private readonly GROQ_DIRECT_URL = 'https://api.groq.com/openai/v1/chat/completions';
   private readonly GROQ_PROXY_URL  = '/api/groq';
-  private readonly API_KEY  = environment.groqApiKey || '';
+
+  // Two API keys — primary and fallback
+  private readonly API_KEYS: string[] = [
+    environment.groqApiKey || '',
+    (environment as any).groqApiKeyFallback || '',
+  ].filter(k => !!k);
+
+  private currentKeyIndex = 0;
+  private get API_KEY(): string {
+    return this.API_KEYS[this.currentKeyIndex % this.API_KEYS.length] || '';
+  }
+  private rotateKey() {
+    if (this.API_KEYS.length > 1) {
+      this.currentKeyIndex = (this.currentKeyIndex + 1) % this.API_KEYS.length;
+    }
+  }
 
   // Only active, non-deprecated Groq models (verified 2025)
   private readonly GROQ_MODELS: GroqModel[] = [
@@ -45,23 +60,34 @@ export class AiService {
 
   private groqReq(model: GroqModel, messages: GroqChatMessage[], maxOutputTokens: number): Observable<any> {
     const body = { model: model.id, messages, temperature: 0.3, max_tokens: maxOutputTokens };
-    const headers = new HttpHeaders({
-      'Authorization': `Bearer ${this.API_KEY}`,
-      'Content-Type': 'application/json'
-    });
-    // Use direct Groq API when key is available, proxy as fallback
-    if (this.API_KEY) {
+    const key = this.API_KEY;
+
+    if (key) {
+      const headers = new HttpHeaders({
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json'
+      });
       return this.http.post(this.GROQ_DIRECT_URL, body, { headers }).pipe(
         catchError(directErr => {
-          // On network error only, try proxy
-          if (directErr?.status === 0) {
+          const s = directErr?.status;
+          // On 401/429 rotate key and retry once
+          if ((s === 401 || s === 429) && this.API_KEYS.length > 1) {
+            this.rotateKey();
+            const retryHeaders = new HttpHeaders({
+              'Authorization': `Bearer ${this.API_KEY}`,
+              'Content-Type': 'application/json'
+            });
+            return this.http.post(this.GROQ_DIRECT_URL, body, { headers: retryHeaders });
+          }
+          // Network error — try proxy
+          if (s === 0) {
             return this.http.post(this.GROQ_PROXY_URL, body);
           }
           return throwError(() => directErr);
         })
       );
     }
-    // No key — try proxy
+    // No key — try serverless proxy
     return this.http.post(this.GROQ_PROXY_URL, body);
   }
 

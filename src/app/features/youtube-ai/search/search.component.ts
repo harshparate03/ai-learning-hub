@@ -116,7 +116,6 @@ export class SearchComponent {
     if (this.query.trim().length > 1) {
       this.suggestions = this.yt.getStudySuggestions(this.query);
       this.showSuggestions = this.suggestions.length > 0 && this.activeTab === 'search';
-      console.log('[YouTube Suggestions]', { query: this.query, count: this.suggestions.length });
     } else {
       this.suggestions = [];
       this.showSuggestions = false;

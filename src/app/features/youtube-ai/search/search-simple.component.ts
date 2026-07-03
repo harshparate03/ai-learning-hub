@@ -504,8 +504,7 @@ export class YoutubeSearchSimpleComponent implements OnInit, OnDestroy {
       error: (error) => {
         this.isSearching = false;
         this.errorMessage = 'An unexpected error occurred';
-        console.error('Search error:', error);
-      }
+        }
     });
   }
 

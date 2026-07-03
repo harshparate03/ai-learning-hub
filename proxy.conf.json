@@ -5,5 +5,11 @@
     "changeOrigin": true,
     "pathRewrite": { "^/groq": "" },
     "logLevel": "warn"
+  },
+  "/api": {
+    "target": "http://localhost:3001",
+    "secure": false,
+    "changeOrigin": true,
+    "logLevel": "warn"
   }
 }
