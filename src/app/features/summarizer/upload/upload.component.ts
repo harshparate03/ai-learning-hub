@@ -1,6 +1,7 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { lastValueFrom } from 'rxjs';
 import { AiService } from '../../../core/services/ai.service';
 import * as pdfjsLib from 'pdfjs-dist';
 import {
@@ -45,7 +46,7 @@ import { AiSparkComponent } from '../../../shared/ai-spark/ai-spark.component';
   templateUrl: './upload.component.html',
   styleUrl: './upload.component.css'
 })
-export class UploadComponent {
+export class UploadComponent implements OnInit {
 
   mode: 'text' | 'file' = 'text';
   inputText: string = '';
@@ -66,6 +67,26 @@ export class UploadComponent {
   savedMsg: string = '';
 
   constructor(private ai: AiService, private pdf: PdfService) {}
+
+  ngOnInit() {
+    const pending = localStorage.getItem('summary_history_load');
+    if (!pending) return;
+    try {
+      const saved = JSON.parse(pending);
+      if (saved.topics?.length) {
+        this.topics = saved.topics;
+        this.questions = saved.questions || [];
+        this.detectedSubject = saved.title || '';
+        this.fileName = saved.title || 'Saved Notes';
+      } else if (saved.content) {
+        this.inputText = this.cleanPdfText(String(saved.content));
+        this.mode = 'text';
+      }
+    } catch (e) {
+      console.error('[Upload History Load Error]', e);
+    }
+    localStorage.removeItem('summary_history_load');
+  }
 
   switchMode(m: 'text' | 'file') {
     this.mode = m;
@@ -110,10 +131,10 @@ export class UploadComponent {
         this.progress = `Reading page ${i} of ${pdf.numPages}...`;
         const page = await pdf.getPage(i);
         const content = await page.getTextContent();
-        text += `\n--- Page ${i} ---\n`;
+        if (text) text += '\n\n';
         text += content.items.map((item: any) => item.str).join(' ') + '\n';
       }
-      this.fileContent = text;
+      this.fileContent = this.cleanPdfText(text);
       this.progress = '';
     }
 
@@ -131,10 +152,18 @@ export class UploadComponent {
 
   chunkText(text: string, size: number): string[] {
     const chunks: string[] = [];
-    for (let i = 0; i < text.length; i += size) {
-      chunks.push(text.slice(i, i + size));
+    const paragraphs = text.split(/\n\n+/);
+    let current = '';
+    for (const para of paragraphs) {
+      if ((current + '\n\n' + para).length > size && current) {
+        chunks.push(current.trim());
+        current = para;
+      } else {
+        current = current ? current + '\n\n' + para : para;
+      }
     }
-    return chunks;
+    if (current.trim()) chunks.push(current.trim());
+    return chunks.length ? chunks : [text];
   }
 
   async extractPdfImages() {
@@ -173,8 +202,8 @@ export class UploadComponent {
     this.chunkResults = [];
     this.detectedSubject = '';
 
-    const content = this.mode === 'text' ? this.inputText : this.fileContent;
-    const chunks = this.chunkText(content, 3000);
+    const content = this.cleanPdfText(this.mode === 'text' ? this.inputText : this.fileContent);
+    const chunks = this.chunkText(content, 6000);
 
     this.extractPdfImages();
 
@@ -216,11 +245,8 @@ STRICT Rules:
 CONTENT:
 ${chunks[i]}`;
 
-        const res: any = await this.ai.generateWithGroq(prompt).toPromise();
-        const text = res?.choices?.[0]?.message?.content
-          || res?.candidates?.[0]?.content?.parts?.[0]?.text
-          || res?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || '').join('')
-          || '';
+        const res: any = await lastValueFrom(this.ai.generateWithGroq(prompt));
+        const text = res?.choices?.[0]?.message?.content || '';
         this.chunkResults.push(text);
 
         this.parseTopics(this.chunkResults.join('\n\n'));
@@ -261,11 +287,8 @@ EXACT FORMAT:
 CONTENT:
 ${this.chunkResults.join('\n\n').slice(0, 8000)}`;
 
-      const qaRes: any = await this.ai.generateWithGroq(qaPrompt).toPromise();
-      const qaText = qaRes?.choices?.[0]?.message?.content
-        || qaRes?.candidates?.[0]?.content?.parts?.[0]?.text
-        || qaRes?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || '').join('')
-        || '';
+      const qaRes: any = await lastValueFrom(this.ai.generateWithGroq(qaPrompt));
+      const qaText = qaRes?.choices?.[0]?.message?.content || '';
       this.parseQuestions(qaText);
 
       this.progress = '';
@@ -278,14 +301,172 @@ ${this.chunkResults.join('\n\n').slice(0, 8000)}`;
         this.errorMsg = 'API key is not valid. Please check the API key configuration.';
       } else if (status === 429) {
         this.errorMsg = 'Rate limit reached. Please wait a moment and try again.';
+      } else if (status === 503 || /all ai models failed/i.test(msg)) {
+        this.errorMsg = 'All AI models are currently unavailable. Please check your API key or try again later.';
       } else if (status === 0 || !status) {
-        this.errorMsg = 'Network error — check your internet connection and try again.';
+        this.errorMsg = 'Network error. Please check your internet connection and try again.';
       } else {
-        this.errorMsg = msg;
+        this.errorMsg = msg || 'AI processing failed. Please try again.';
       }
       this.progress = '';
       this.loading = false;
     }
+  }
+
+  private buildLocalSummary(content: string) {
+    const cleanContent = this.normalizeText(content);
+    const sections = this.extractLocalSections(cleanContent);
+    this.topics = sections.map((section, i) => ({
+      title: section.title || `Topic ${i + 1}`,
+      explanation: this.makeLocalParagraph(section.title, section.body),
+      subtopics: this.extractLocalSubtopics(section.body).slice(0, 5).map(sub => {
+        const context = this.findContext(section.body, sub);
+        return {
+          title: sub,
+          explanation: this.makeLocalParagraph(sub, context || section.body),
+          bullets: this.extractLocalBullets(context || section.body).slice(0, 5)
+        };
+      }),
+      bullets: this.extractLocalBullets(section.body).slice(0, 6),
+      codes: this.extractCodeBlocks(section.body),
+      image: ''
+    })).slice(0, 12);
+
+    if (!this.topics.length && cleanContent) {
+      this.topics = [{
+        title: this.firstWords(cleanContent, 'Overview'),
+        explanation: this.makeLocalParagraph('Overview', cleanContent),
+        subtopics: [],
+        bullets: this.splitSentences(cleanContent).slice(0, 6),
+        codes: [],
+        image: ''
+      }];
+    }
+
+    this.questions = this.topics.slice(0, 10).map(topic => ({
+      q: `Explain ${topic.title.replace(/\*\*/g, '')}.`,
+      a: topic.explanation,
+      steps: [
+        ...topic.bullets.slice(0, 3),
+        ...topic.subtopics.slice(0, 2).map(s => `${s.title}: ${s.explanation}`)
+      ].slice(0, 5),
+      image: ''
+    }));
+
+    this.detectedSubject = this.topics.slice(0, 3).map(t => t.title.replace(/\*\*/g, '')).join(', ');
+    this.errorMsg = '';
+    this.progress = `Built local notes from content - ${this.topics.length} topics found.`;
+  }
+
+  private extractLocalSections(content: string): { title: string; body: string }[] {
+    const lines = content.split('\n').map(l => l.trim()).filter(Boolean);
+    const sections: { title: string; body: string[] }[] = [];
+    let current: { title: string; body: string[] } | null = null;
+    const flush = () => { if (current) sections.push(current); };
+
+    for (const line of lines) {
+      const heading = this.extractHeading(line);
+      if (heading) {
+        flush();
+        current = { title: heading, body: [] };
+      } else if (current) {
+        current.body.push(line);
+      } else {
+        current = { title: this.firstWords(content, this.fileName || 'Study Notes'), body: [line] };
+      }
+    }
+    flush();
+
+    const mapped = sections
+      .map(s => ({ title: s.title, body: s.body.join('\n') }))
+      .filter(s => s.body.trim().length > 20);
+    if (mapped.length) return mapped;
+
+    return content
+      .split(/\n\s*\n|(?<=\.)\s+(?=[A-Z][A-Za-z ]{8,70}:)/)
+      .map((p, i) => ({ title: this.firstWords(p, `Topic ${i + 1}`), body: p.trim() }))
+      .filter(s => s.body.length > 30)
+      .slice(0, 12);
+  }
+
+  private extractHeading(line: string): string | null {
+    const clean = line
+      .replace(/^#{1,6}\s*/, '')
+      .replace(/^\s*(?:[-*+]|\d+[.)])\s*/, '')
+      .replace(/\*\*(.*?)\*\*/g, '$1')
+      .trim();
+    if (!clean || clean.length > 90) return null;
+    if (/^---\s*Page\s+\d+\s*---$/i.test(clean)) return null;
+    if (/[:：]$/.test(clean)) return clean.replace(/[:：]$/, '');
+    if (/^\d+(?:\.\d+)*\s+/.test(clean)) return clean.replace(/^\d+(?:\.\d+)*\s+/, '');
+    if (/^[A-Z][A-Z0-9\s/&-]{4,}$/.test(clean)) return clean;
+    if (clean.split(/\s+/).length <= 8 && !/[.!?]$/.test(clean)) return clean;
+    return null;
+  }
+
+  private extractLocalSubtopics(text: string): string[] {
+    const headings = text.split('\n').map(l => this.extractHeading(l)).filter((h): h is string => !!h);
+    if (headings.length) return this.uniqueLabels(headings);
+    return this.uniqueLabels(this.extractLocalBullets(text).slice(0, 8));
+  }
+
+  private extractLocalBullets(text: string): string[] {
+    const bullets = text.split('\n')
+      .map(l => l.trim().match(/^(?:[-*+]|\d+[.)])\s+(.+)/)?.[1] || '')
+      .filter(Boolean);
+    if (bullets.length) return this.uniqueLabels(bullets);
+    return this.uniqueLabels(this.splitSentences(text).slice(0, 8));
+  }
+
+  private splitSentences(text: string): string[] {
+    return this.normalizeText(text)
+      .split(/(?<=[.!?])\s+|\n+/)
+      .map(s => s.trim())
+      .filter(s => s.length >= 20 && s.length <= 260);
+  }
+
+  private findContext(body: string, label: string): string {
+    const sentences = this.splitSentences(body);
+    const words = label.toLowerCase().split(/\W+/).filter(w => w.length > 3).slice(0, 4);
+    const idx = sentences.findIndex(s => words.some(w => s.toLowerCase().includes(w)));
+    if (idx === -1) return sentences.slice(0, 3).join(' ');
+    return sentences.slice(Math.max(0, idx - 1), idx + 3).join(' ');
+  }
+
+  private makeLocalParagraph(label: string, source: string): string {
+    const sentences = this.splitSentences(source).slice(0, 3);
+    if (sentences.length) return sentences.join(' ');
+    return `${label || 'This topic'} was identified from the provided content and is included as part of the study structure.`;
+  }
+
+  private extractCodeBlocks(text: string): { lang: string; code: string }[] {
+    const codes: { lang: string; code: string }[] = [];
+    const re = /```(\w*)\n([\s\S]*?)```/g;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(text)) !== null) {
+      if (match[2].trim().length > 5) codes.push({ lang: match[1] || 'code', code: match[2].trim() });
+    }
+    return codes;
+  }
+
+  private firstWords(text: string, fallback: string): string {
+    return this.normalizeText(text).split(/\s+/).filter(Boolean).slice(0, 8).join(' ') || fallback;
+  }
+
+  private uniqueLabels(items: string[]): string[] {
+    const seen = new Set<string>();
+    return items
+      .map(i => i.replace(/\*\*(.*?)\*\*/g, '$1').replace(/^[\d.)\-\s]+/, '').trim())
+      .filter(i => {
+        const key = i.toLowerCase();
+        if (key.length < 3 || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  }
+
+  private normalizeText(text: string): string {
+    return (text || '').replace(/\r/g, '').replace(/[ \t]{2,}/g, ' ').trim();
   }
 
   parseTopics(text: string) {
@@ -368,7 +549,14 @@ ${this.chunkResults.join('\n\n').slice(0, 8000)}`;
   }
 
   renderBold(text: string): string {
-    return text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    // Escape HTML first to prevent XSS, then apply safe bold formatting
+    const escaped = (text || '')
+      .replace(/^#{1,6}\s*/gm, '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .trim();
+    return escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   }
 
   copyCode(code: string, index: number) {
@@ -992,11 +1180,21 @@ ${this.chunkResults.join('\n\n').slice(0, 8000)}`;
       title,
       date: new Date().toLocaleDateString(),
       preview: this.topics[0]?.explanation?.replace(/\*\*(.*?)\*\*/g, '$1')?.slice(0, 100) || '',
-      content: this.topics.map(t => `${t.title.replace(/\*\*(.*?)\*\*/g,'')}: ${t.explanation.replace(/\*\*(.*?)\*\*/g,'$1')}`).join('\n')
+      content: this.topics.map(t => `${t.title.replace(/\*\*(.*?)\*\*/g,'')}: ${t.explanation.replace(/\*\*(.*?)\*\*/g,'$1')}`).join('\n'),
+      topics: JSON.parse(JSON.stringify(this.topics)),
+      questions: JSON.parse(JSON.stringify(this.questions))
     });
     localStorage.setItem('summarizer_history', JSON.stringify(history.slice(0, 50)));
     this.savedMsg = '✓ Saved!';
     setTimeout(() => this.savedMsg = '', 2500);
+  }
+
+  private cleanPdfText(text: string): string {
+    return (text || '')
+      .replace(/\n---\s*Page\s+\d+\s*---\n/gi, '\n\n')
+      .replace(/^---\s*Page\s+\d+\s*---\n?/gim, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 }
 

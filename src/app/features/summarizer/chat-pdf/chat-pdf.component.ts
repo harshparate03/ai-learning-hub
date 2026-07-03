@@ -1,4 +1,4 @@
-import { Component, ElementRef, ViewChild } from '@angular/core';
+import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -17,7 +17,7 @@ import { AiSparkComponent } from '../../../shared/ai-spark/ai-spark.component';
   templateUrl: './chat-pdf.component.html',
   styleUrls: ['./chat-pdf.component.css']
 })
-export class ChatPdfComponent {
+export class ChatPdfComponent implements OnInit {
 
   @ViewChild('messagesContainer') private messagesContainer!: ElementRef;
 
@@ -31,6 +31,37 @@ export class ChatPdfComponent {
   messages: { role: 'user' | 'ai'; text: string; typing?: boolean }[] = [];
 
   constructor(private aiService: AiService, private pdf: PdfService) {}
+
+  ngOnInit() {
+    const pending = localStorage.getItem('chat_history_load');
+    if (!pending) return;
+    try {
+      const saved = JSON.parse(pending);
+      this.fileName = saved.title?.replace(/^Chat:\s*/i, '') || 'Saved Chat';
+      const messages = saved.messages as { role: string; text: string }[] | undefined;
+      if (messages?.length) {
+        this.messages = messages.map(m => ({
+          role: m.role === 'user' ? 'user' as const : 'ai' as const,
+          text: m.text
+        }));
+        this.pdfText = 'Restored from history. Re-upload the PDF to ask new questions.';
+      } else if (saved.content) {
+        this.messages = String(saved.content).split('\n').reduce((acc, line) => {
+          const trimmed = line.trim();
+          if (trimmed.startsWith('Q:')) {
+            acc.push({ role: 'user' as const, text: trimmed.replace(/^Q:\s*/, '') });
+          } else if (trimmed.startsWith('A:')) {
+            acc.push({ role: 'ai' as const, text: trimmed.replace(/^A:\s*/, '') });
+          }
+          return acc;
+        }, [] as { role: 'user' | 'ai'; text: string }[]);
+        this.pdfText = 'Restored from history. Re-upload the PDF to ask new questions.';
+      }
+    } catch (e) {
+      console.error('[Chat History Load Error]', e);
+    }
+    localStorage.removeItem('chat_history_load');
+  }
 
   /** Upload and parse PDF */
   async onFileSelected(event: any) {
@@ -262,26 +293,34 @@ export class ChatPdfComponent {
     this.messages.push({ role: 'ai', text: '', typing: true });
     this.scrollToBottom();
 
+    // Keep last 4 non-typing messages for history, strip HTML tags
     const history: GroqChatMessage[] = this.messages
-      .filter(m => !m.typing)
-      .slice(-6)
+      .filter(m => !m.typing && m.text.trim() && !m.text.startsWith('⚠️'))
+      .slice(-4)
       .map(m => ({
         role: m.role === 'user' ? 'user' as const : 'assistant' as const,
-        content: m.text.replace(/<[^>]*>/g, '').slice(0, 2000)
+        content: m.text.replace(/<[^>]*>/g, '').slice(0, 800)
       }));
 
-    const docContext = `DOCUMENT CONTENT (answer ONLY from this):\n${this.pdfText.slice(0, 12000)}\n\nIf the answer is not in the document, say exactly: "I couldn't find that in the document."`;
+    // Safe PDF context — 10k chars keeps total tokens well within all model limits
+    const pdfContext = this.pdfText.slice(0, 10000);
+
+    const systemPrompt = `You are a document assistant. Answer ONLY using the document below. If the answer is not in the document, say: "I couldn't find that in the document."
+
+DOCUMENT:
+${pdfContext}
+
+Format answers with ## headings, bullet points, and \`\`\` code blocks where relevant.`;
 
     this.aiService.chatWithGroq([
-      { role: 'system', content: docContext },
+      { role: 'system', content: systemPrompt },
       ...history
-    ]).subscribe({
+    ], { skipDefaultSystem: true }).subscribe({
       next: (answer: string) => {
         this.replaceTypingMessage(answer || 'Sorry, I could not generate a response.');
       },
       error: (err: any) => {
-        console.error('[Chat PDF Error]', err);
-        this.replaceTypingMessage(this.aiService.proxyErrorMessage(err));
+        this.replaceTypingMessage(`⚠️ ${this.aiService.proxyErrorMessage(err)}`);
       }
     });
   }
@@ -307,12 +346,33 @@ export class ChatPdfComponent {
       .replace(/\*\*(.+?)\*\*/g, '$1')
       .replace(/\*(.+?)\*/g, '$1')
       .replace(/`([^`]+)`/g, '$1')
-      .replace(/^\s*[-*+]\s+/gm, '• ')
-      .replace(/^\s*\d+\.\s+/gm, '')
+      .replace(/^\s*[-*+]\s+/gm, '- ')
       .replace(/\|/g, ' ')
       .replace(/<[^>]*>/g, '')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
+  }
+
+  private splitForPdf(text: string, maxChars = 900): string[] {
+    const clean = this.stripMarkdownForPdf(text);
+    if (clean.length <= maxChars) return [clean];
+
+    const chunks: string[] = [];
+    let remaining = clean;
+    while (remaining.length > maxChars) {
+      const slice = remaining.slice(0, maxChars);
+      const breakAt = Math.max(
+        slice.lastIndexOf('\n\n'),
+        slice.lastIndexOf('\n'),
+        slice.lastIndexOf('. '),
+        slice.lastIndexOf(' ')
+      );
+      const idx = breakAt > maxChars * 0.45 ? breakAt + (slice[breakAt] === '.' ? 1 : 0) : maxChars;
+      chunks.push(remaining.slice(0, idx).trim());
+      remaining = remaining.slice(idx).trim();
+    }
+    if (remaining) chunks.push(remaining);
+    return chunks;
   }
 
   private scrollToBottom() {
@@ -337,9 +397,11 @@ export class ChatPdfComponent {
     this.messages
       .filter(m => !m.typing && m.text.trim())
       .forEach(m => {
-        lines.push({
-          type: m.role === 'user' ? 'chat-user' : 'chat-ai',
-          text: this.stripMarkdownForPdf(m.text)
+        this.splitForPdf(m.text).forEach((chunk, idx) => {
+          lines.push({
+            type: m.role === 'user' ? 'chat-user' : 'chat-ai',
+            text: idx === 0 ? chunk : `(continued)\n${chunk}`
+          });
         });
       });
 
@@ -354,12 +416,16 @@ export class ChatPdfComponent {
   saveChat() {
     if (!this.messages.length || !this.fileName) return;
     const history = JSON.parse(localStorage.getItem('summarizer_history') || '[]');
+    const cleanMessages = this.messages
+      .filter(m => !m.typing)
+      .map(m => ({ role: m.role, text: m.text.replace(/<[^>]*>/g, '') }));
     history.unshift({
       type: 'qa',
       title: `Chat: ${this.fileName}`,
       date: new Date().toLocaleDateString(),
-      preview: this.messages.find(m => m.role === 'user')?.text?.slice(0, 100) || '',
-      content: this.messages.map(m => `${m.role === 'user' ? 'Q' : 'A'}: ${m.text.replace(/<[^>]*>/g, '')}`).join('\n')
+      preview: cleanMessages.find(m => m.role === 'user')?.text?.slice(0, 100) || '',
+      content: cleanMessages.map(m => `${m.role === 'user' ? 'Q' : 'A'}: ${m.text}`).join('\n'),
+      messages: cleanMessages
     });
     localStorage.setItem('summarizer_history', JSON.stringify(history.slice(0, 50)));
     this.savedMsg = '✓ Saved to History';

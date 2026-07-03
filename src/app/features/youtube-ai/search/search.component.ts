@@ -116,7 +116,7 @@ export class SearchComponent {
     if (this.query.trim().length > 1) {
       this.suggestions = this.yt.getStudySuggestions(this.query);
       this.showSuggestions = this.suggestions.length > 0 && this.activeTab === 'search';
-      console.log('[YouTube Suggestions]', { query: this.query, count: this.suggestions.length, suggestions: this.suggestions.slice(0, 3) });
+      console.log('[YouTube Suggestions]', { query: this.query, count: this.suggestions.length });
     } else {
       this.suggestions = [];
       this.showSuggestions = false;
@@ -150,7 +150,7 @@ export class SearchComponent {
       next: (res: any) => {
         this.videos = res.items || [];
         if ((res._source === 'curated' || res._source === 'ai-curated') && this.videos.length) {
-          this.searchInfo = `🤖 Showing curated results for "${rawQuery}"`;
+          this.searchInfo = `Showing curated results for "${rawQuery}" (live YouTube API unavailable)`;
         }
         if (!this.videos.length) {
           this.errorMsg = `No results found for "${rawQuery}". Try different keywords or paste a URL directly.`;
@@ -159,8 +159,8 @@ export class SearchComponent {
       },
       error: (err: any) => {
         this.errorMsg = err?.status === 0
-          ? 'YouTube API unavailable. Run "npm run proxy" in a separate terminal, then try again.'
-          : 'Search failed. Try pasting a video URL using the "🔗 Paste URL" tab.';
+          ? 'YouTube API unavailable. Run "npm start" to launch the app with the API proxy, then try again.'
+          : 'Search failed. Try pasting a video URL using the Paste URL tab.';
         this.loading = false;
       }
     });
@@ -558,7 +558,6 @@ Use EXACTLY this format:
         this.loadingAI = false;
       },
       error: (err: any) => {
-        console.error(`[YouTube AI Error (${type})]`, err);
         this.errorMsg = this.ai.proxyErrorMessage(err);
         this.loadingAI = false;
       }
@@ -768,7 +767,6 @@ Output ONLY:
         this.errorMsg = 'AI returned empty content. Try again.';
       }
     } catch (e: any) {
-      console.error('[VisualNotes Error]', e);
       this.errorMsg = e?.message || 'Generation failed. Try again.';
     } finally {
       this.loadingAI = false;

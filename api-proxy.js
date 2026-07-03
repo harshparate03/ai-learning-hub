@@ -144,6 +144,26 @@ app.get('/api/youtube-details', async (req, res) => {
   }
 });
 
+// ─── YOUTUBE OEMBED PROXY (avoids browser CORS) ─────────────────────────────
+app.get('/api/youtube-oembed', async (req, res) => {
+  try {
+    const { url } = req.query;
+    if (!url) {
+      return res.status(400).json({ error: 'Missing url parameter' });
+    }
+    const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(String(url))}&format=json`;
+    const response = await fetch(oembedUrl);
+    const data = await response.json();
+    if (!response.ok) {
+      return res.status(response.status).json(data);
+    }
+    res.json(data);
+  } catch (err) {
+    console.error('[YouTube oEmbed Proxy Error]', err.message);
+    res.status(500).json({ error: 'Failed to fetch oEmbed', message: err.message });
+  }
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`\nâœ… API Proxy Server running on http://localhost:${PORT}`);

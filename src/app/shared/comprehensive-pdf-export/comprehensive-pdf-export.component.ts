@@ -1,7 +1,7 @@
 import { Component, Input, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ComprehensivePdfExportService, ComprehensivePdfSection, ComprehensivePdfOptions } from '../services/comprehensive-pdf-export.service';
+import { ComprehensivePdfExportService, ComprehensivePdfSection, ComprehensivePdfOptions } from '../../core/services/comprehensive-pdf-export.service';
 
 /**
  * Comprehensive PDF Export Component
@@ -336,8 +336,7 @@ export class ComprehensivePdfExportComponent implements OnInit {
         `✓ Downloaded: ${this.title} (${this.sections.length} sections)`,
         true
       );
-    }).catch(error => {
-      console.error('Export error:', error);
+    }).catch(() => {
       this.showStatus('Failed to export PDF', false);
     }).finally(() => {
       this.isExporting = false;
@@ -366,8 +365,7 @@ export class ComprehensivePdfExportComponent implements OnInit {
     this.pdfService.exportSection(section, this.title, exportOptions)
       .then(() => {
         this.showStatus(`✓ Downloaded: ${section.title}`, true);
-      }).catch(error => {
-        console.error('Export error:', error);
+      }).catch(() => {
         this.showStatus('Failed to export section', false);
       }).finally(() => {
         this.isExporting = false;

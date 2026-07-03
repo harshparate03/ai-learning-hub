@@ -1,7 +1,7 @@
 import { Component, Input, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { PdfDownloadService, Section, PdfDownloadOptions } from '../services/pdf-download.service';
-import { PdfLine } from '../services/pdf.service';
+import { PdfDownloadService, Section, PdfDownloadOptions } from '../../core/services/pdf-download.service';
+import { PdfLine } from '../../core/services/pdf.service';
 
 /**
  * PDF Download Button Component
@@ -237,14 +237,12 @@ export class PdfDownloadButtonComponent implements OnInit {
           `✓ Downloaded: ${this.sectionTitle}`,
           true
         );
-      }).catch(error => {
-        console.error('PDF download error:', error);
+      }).catch(() => {
         this.showStatus('Failed to download PDF', false);
       }).finally(() => {
         this.isDownloading = false;
       });
-    } catch (error) {
-      console.error('PDF download error:', error);
+    } catch {
       this.showStatus('Error generating PDF', false);
       this.isDownloading = false;
     }
@@ -277,14 +275,12 @@ export class PdfDownloadButtonComponent implements OnInit {
           `✓ Downloaded: Complete PDF (${this.allSections?.length || 0} sections)`,
           true
         );
-      }).catch(error => {
-        console.error('PDF download error:', error);
+      }).catch(() => {
         this.showStatus('Failed to download PDF', false);
       }).finally(() => {
         this.isDownloading = false;
       });
-    } catch (error) {
-      console.error('PDF download error:', error);
+    } catch {
       this.showStatus('Error generating PDF', false);
       this.isDownloading = false;
     }
@@ -374,9 +370,7 @@ export class PdfDownloadSimpleComponent implements OnInit {
       { bulletStyle: this.bulletStyle }
     ).then(() => {
       this.isDownloading = false;
-    }).catch(error => {
-      console.error('PDF download error:', error);
-      alert('Failed to download PDF');
+    }).catch(() => {
       this.isDownloading = false;
     });
   }

@@ -20,7 +20,7 @@ export class StorageService {
     try {
       const serialized = JSON.stringify(value);
       if (serialized.length > MAX_ITEM_BYTES) {
-        console.warn(`[Storage] Item "${key}" exceeds safe size limit`);
+        console.warn('[Storage] Item exceeds safe size limit');
         return false;
       }
       localStorage.setItem(PREFIX + key, serialized);

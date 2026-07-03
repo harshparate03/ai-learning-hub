@@ -365,21 +365,17 @@ export class PdfService {
     const bh = Math.max(ls.length * 7 + 10, 16);
     this.need(bh + 6);
 
-    // Card background
     d.setFillColor(...v(C.indigoTint));
     d.roundedRect(this.ML, this.y, this.CW, bh, 3, 3, 'F');
-
-    // Left accent — indigo/purple split
-    d.setFillColor(...v(C.indigo));
-    d.roundedRect(this.ML, this.y, 4, bh * 0.55, 2, 2, 'F');
-    d.setFillColor(...v(C.purple));
-    d.roundedRect(this.ML, this.y + bh * 0.55, 4, bh * 0.45, 2, 2, 'F');
+    d.setDrawColor(...v(C.borderLt));
+    d.setLineWidth(0.2);
+    d.roundedRect(this.ML, this.y, this.CW, bh, 3, 3, 'S');
 
     d.setFont('helvetica', 'bold');
     d.setFontSize(13);
     d.setTextColor(...v(C.indigoDk));
     const ty = this.y + 7;
-    ls.forEach((l: string, i: number) => d.text(l, this.ML + 9, ty + i * 7));
+    ls.forEach((l: string, i: number) => d.text(l, this.ML + 6, ty + i * 7));
     this.y += bh + 5;
   }
 
@@ -389,16 +385,16 @@ export class PdfService {
     const sh = ls.length * 6.5 + 4;
     this.need(sh + 4);
 
-    d.setFillColor(...v(C.purple));
-    d.roundedRect(this.ML, this.y + 1, 3, sh - 2, 1, 1, 'F');
-
     d.setFont('helvetica', 'bold');
     d.setFontSize(11);
     d.setTextColor(...v(C.purple));
     ls.forEach((l: string, i: number) => {
       this.need(6.5);
-      d.text(l, this.ML + 8, this.y + 6 + i * 6.5);
+      d.text(l, this.ML, this.y + 6 + i * 6.5);
     });
+    d.setDrawColor(...v(C.borderLt));
+    d.setLineWidth(0.2);
+    d.line(this.ML, this.y + sh, this.ML + 26, this.y + sh);
     this.y += sh + 3;
   }
 
@@ -419,30 +415,18 @@ export class PdfService {
 
   private bullet(text: string, style?: string, level?: number) {
     const d   = this.doc;
-    
-    // Simplified bullet symbols - only using proven reliable characters
-    const getBulletSymbol = (lv?: number): string => {
-      if (lv === 1) return '•';      // Main level: bullet
-      if (lv === 2) return '–';      // Sub level: en-dash
-      if (lv === 3) return '◦';      // Detail level: hollow circle
-      return '•';                    // Default: bullet
-    };
-    
-    const bulletSymbol = getBulletSymbol(level);
-    
-    // Clean text and split to fit
     const cleanText = this.clean(text);
     const ls  = d.splitTextToSize(cleanText, this.CW - 12);
     const lnH = 5.6;
     this.need(ls.length * lnH + 2);
 
-    // Render bullet symbol
+    d.setFillColor(...v(C.indigo));
+    d.circle(this.ML + 3, this.y + 3.4, 1.25, 'F');
+
     d.setFont('helvetica', 'normal');
     d.setFontSize(10);
     d.setTextColor(...v(C.textB));
-    d.text(bulletSymbol, this.ML + 2, this.y + 3.8);
 
-    // Render text lines
     ls.forEach((l: string, i: number) => {
       this.need(lnH);
       d.text(l, this.ML + 8, this.y + 3.8 + i * lnH);
@@ -626,9 +610,7 @@ export class PdfService {
         const cellStartY = sy + 4;
         cellLines.forEach((line: string, lineIdx: number) => {
           const lineY = cellStartY + lineIdx * 4.5;
-          if (lineY < sy + rh - 2) {  // Don't overflow row
-            d.text(line, sx + ci * cw + 3, lineY, { maxWidth: cw - 6 });
-          }
+          d.text(line, sx + ci * cw + 3, lineY, { maxWidth: cw - 6 });
         });
       });
       
@@ -742,110 +724,108 @@ export class PdfService {
   private qaA(text: string) {
     const d  = this.doc;
     const ls = d.splitTextToSize(this.clean(text), this.CW - 12);
-    const h  = ls.length * 5.4 + 16;
-    this.need(Math.min(h + 8, 60));
+    const lineH = 5.4;
 
-    d.setFillColor(...v(C.greenTint));
-    d.roundedRect(this.ML, this.y, this.CW, h, 3, 3, 'F');
-
-    d.setFillColor(...v(C.green));
-    d.roundedRect(this.ML + 4, this.y + 3.5, 22, 7.5, 2, 2, 'F');
-    d.setFont('helvetica', 'bold'); d.setFontSize(7.5);
-    d.setTextColor(...v(C.white));
-    d.text('Answer', this.ML + 6, this.y + 8.8);
-
-    d.setDrawColor(...v(C.greenLt)); d.setLineWidth(0.7);
-    d.line(this.ML + 4, this.y + 13, this.ML + 4, this.y + h - 3);
-
-    d.setFont('helvetica', 'normal'); d.setFontSize(10);
-    d.setTextColor(...v(C.textB));
     ls.forEach((l: string, i: number) => {
-      if (14 + i * 5.4 < h - 2) d.text(l, this.ML + 10, this.y + 14 + i * 5.4);
+      const blockH = i === 0 ? lineH + 16 : lineH + 2;
+      this.need(blockH + 4);
+
+      if (i === 0) {
+        d.setFillColor(...v(C.green));
+        d.roundedRect(this.ML + 4, this.y + 3.5, 22, 7.5, 2, 2, 'F');
+        d.setFont('helvetica', 'bold'); d.setFontSize(7.5);
+        d.setTextColor(...v(C.white));
+        d.text('Answer', this.ML + 6, this.y + 8.8);
+
+        d.setDrawColor(...v(C.greenLt)); d.setLineWidth(0.7);
+        d.line(this.ML + 4, this.y + 13, this.ML + 4, this.y + blockH + 2);
+      }
+
+      d.setFont('helvetica', 'normal'); d.setFontSize(10);
+      d.setTextColor(...v(C.textB));
+      d.text(l, this.ML + 10, this.y + (i === 0 ? 14 : 6));
+      this.y += blockH;
     });
-    this.y += h + 8;
+    this.y += 4;
   }
 
   // ─── Chat bubbles ─────────────────────────────────────────────────────────
   // Matches ai_chat_export_template.pdf: user RIGHT indigo, AI LEFT light
 
   private chatUser(text: string) {
-    const d   = this.doc;
-    const maxW = this.CW * 0.72;
-    const ls   = d.splitTextToSize(this.clean(text), maxW - 18);
-    const lnH  = 5.6;
-    const h    = ls.length * lnH + 18;
-    this.need(h + 8);
-
-    const bx = this.ML + this.CW - maxW;
-    const by = this.y;
-
-    // Bubble — indigo fill
-    d.setFillColor(...v(C.chatUserBg));
-    d.roundedRect(bx, by, maxW, h, 6, 6, 'F');
-
-    // Lighter right shimmer
-    d.setFillColor(120, 123, 248);
-    d.roundedRect(bx + maxW * 0.5, by, maxW * 0.5, h, 6, 6, 'F');
-
-    // Tail — sharp bottom-right corner
-    d.setFillColor(...v(C.chatUserBg));
-    d.rect(bx + maxW - 6, by + h - 6, 6, 6, 'F');
-
-    // YOU badge
-    d.setFillColor(80, 82, 210);
-    d.roundedRect(bx + 5, by + 4, 18, 5.5, 1.5, 1.5, 'F');
-    d.setFont('helvetica', 'bold'); d.setFontSize(6);
-    d.setTextColor(220, 222, 255);
-    d.text('YOU', bx + 7.5, by + 8.2);
-
-    // Message
-    d.setFont('helvetica', 'normal'); d.setFontSize(9.5);
-    d.setTextColor(...v(C.white));
-    ls.forEach((l: string, i: number) => d.text(l, bx + 6, by + 13.5 + i * lnH));
-
-    this.y = by + h + 7;
+    this.renderChatBubble(text, 'user');
   }
 
   private chatAI(text: string) {
-    const d    = this.doc;
-    const maxW = this.CW * 0.80;
-    const ls   = d.splitTextToSize(this.clean(text), maxW - 18);
-    const lnH  = 5.6;
-    const h    = ls.length * lnH + 18;
-    this.need(h + 8);
+    this.renderChatBubble(text, 'ai');
+  }
 
-    const bx = this.ML;
-    const by = this.y;
+  /** Render chat bubble with automatic page breaks for long messages */
+  private renderChatBubble(text: string, role: 'user' | 'ai') {
+    const d = this.doc;
+    const maxW = this.CW * (role === 'user' ? 0.72 : 0.80);
+    const ls = d.splitTextToSize(this.clean(text), maxW - 18);
+    const lnH = 5.6;
+    const headerH = 14;
+    const pad = 8;
+    let idx = 0;
 
-    // Bubble — light fill
-    d.setFillColor(...v(C.chatAiBg));
-    d.roundedRect(bx, by, maxW, h, 6, 6, 'F');
+    while (idx < ls.length) {
+      const spaceLeft = this.BTM - this.y - headerH - pad;
+      const maxLines = Math.max(1, Math.floor(spaceLeft / lnH));
+      const chunk = ls.slice(idx, idx + maxLines);
+      const h = chunk.length * lnH + headerH + pad;
+      this.need(h + 8);
 
-    // Left accent strip — indigo
-    d.setFillColor(...v(C.indigo));
-    d.roundedRect(bx, by, 4, h, 3, 3, 'F');
+      const bx = role === 'user' ? this.ML + this.CW - maxW : this.ML;
+      const by = this.y;
+      const isFirst = idx === 0;
+      const isLast = idx + chunk.length >= ls.length;
 
-    // Border
-    d.setDrawColor(...v(C.borderMd)); d.setLineWidth(0.22);
-    d.roundedRect(bx, by, maxW, h, 6, 6, 'S');
+      if (role === 'user') {
+        d.setFillColor(...v(C.chatUserBg));
+        d.roundedRect(bx, by, maxW, h, 6, 6, 'F');
+        d.setFillColor(120, 123, 248);
+        d.roundedRect(bx + maxW * 0.5, by, maxW * 0.5, h, 6, 6, 'F');
+        if (isLast) {
+          d.setFillColor(...v(C.chatUserBg));
+          d.rect(bx + maxW - 6, by + h - 6, 6, 6, 'F');
+        }
+        if (isFirst) {
+          d.setFillColor(80, 82, 210);
+          d.roundedRect(bx + 5, by + 4, 18, 5.5, 1.5, 1.5, 'F');
+          d.setFont('helvetica', 'bold'); d.setFontSize(6);
+          d.setTextColor(220, 222, 255);
+          d.text('YOU', bx + 7.5, by + 8.2);
+        }
+        d.setFont('helvetica', 'normal'); d.setFontSize(9.5);
+        d.setTextColor(...v(C.white));
+      } else {
+        d.setFillColor(...v(C.chatAiBg));
+        d.roundedRect(bx, by, maxW, h, 6, 6, 'F');
+        d.setFillColor(...v(C.indigo));
+        d.roundedRect(bx, by, 4, h, 3, 3, 'F');
+        d.setDrawColor(...v(C.borderMd)); d.setLineWidth(0.22);
+        d.roundedRect(bx, by, maxW, h, 6, 6, 'S');
+        if (isLast) {
+          d.setFillColor(...v(C.chatAiBg));
+          d.rect(bx, by + h - 6, 6, 6, 'F');
+        }
+        if (isFirst) {
+          d.setFillColor(...v(C.indigo));
+          d.roundedRect(bx + 7, by + 4, 12, 5.5, 1.5, 1.5, 'F');
+          d.setFont('helvetica', 'bold'); d.setFontSize(6);
+          d.setTextColor(...v(C.white));
+          d.text('AI', bx + 10.5, by + 8.2);
+        }
+        d.setFont('helvetica', 'normal'); d.setFontSize(9.5);
+        d.setTextColor(...v(C.textB));
+      }
 
-    // Tail — sharp bottom-left
-    d.setFillColor(...v(C.chatAiBg));
-    d.rect(bx, by + h - 6, 6, 6, 'F');
-
-    // AI badge
-    d.setFillColor(...v(C.indigo));
-    d.roundedRect(bx + 7, by + 4, 12, 5.5, 1.5, 1.5, 'F');
-    d.setFont('helvetica', 'bold'); d.setFontSize(6);
-    d.setTextColor(...v(C.white));
-    d.text('AI', bx + 10.5, by + 8.2);
-
-    // Message
-    d.setFont('helvetica', 'normal'); d.setFontSize(9.5);
-    d.setTextColor(...v(C.textB));
-    ls.forEach((l: string, i: number) => d.text(l, bx + 8, by + 13.5 + i * lnH));
-
-    this.y = by + h + 7;
+      chunk.forEach((l: string, i: number) => d.text(l, bx + (role === 'user' ? 6 : 8), by + headerH + i * lnH));
+      this.y = by + h + 7;
+      idx += chunk.length;
+    }
   }
 
   // ─── Helper ───────────────────────────────────────────────────────────────
@@ -868,7 +848,9 @@ export class PdfService {
       .replace(/_(.+?)_/g, '$1')
       .replace(/`{3}[\s\S]*?`{3}/g, '[code]')
       .replace(/`(.+?)`/g, '$1')
-      .replace(/^#{1,6}\s+/gm, '')
+      .replace(/#{1,6}\s*([^#\n]+?)\s*#{1,6}/g, '$1')
+      .replace(/^\s*#{1,6}\s*/gm, '')
+      .replace(/\s+#{1,6}\s*$/gm, '')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
   }

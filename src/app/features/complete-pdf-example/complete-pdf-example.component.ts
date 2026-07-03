@@ -13,8 +13,8 @@
 
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ComprehensivePdfExportComponent } from '../shared/comprehensive-pdf-export/comprehensive-pdf-export.component';
-import { ComprehensivePdfSection, ComprehensivePdfExportService } from '../core/services/comprehensive-pdf-export.service';
+import { ComprehensivePdfExportComponent } from '../../shared/comprehensive-pdf-export/comprehensive-pdf-export.component';
+import { ComprehensivePdfSection, ComprehensivePdfExportService } from '../../core/services/comprehensive-pdf-export.service';
 
 @Component({
   selector: 'app-complete-pdf-example',

@@ -133,9 +133,8 @@ export class GenerateComponent implements OnInit {
       } else {
         this.errorMsg = 'Unsupported file type. Use PDF, DOCX, PPTX, TXT, CSV.';
       }
-    } catch (e) {
-      this.errorMsg = `Could not read file: ${(e as any)?.message || 'Unknown error'}`;
-      console.error('[File Read Error]', e);
+    } catch {
+      this.errorMsg = 'Could not read file. Please ensure it is a valid, supported file.';
     }
     this.progress = '';
   }
@@ -287,7 +286,6 @@ export class GenerateComponent implements OnInit {
       }
     } catch (e: any) {
       if (!this.errorMsg) {
-        console.error('[Generate Error]', e);
         this.handleMindMapGenerationFailure(e);
       }
     } finally {
@@ -784,8 +782,7 @@ For all other text: extract headings, topics, subtopics exactly as they appear.`
         const res: any = await this.ai.generateWithGroq(`${instruction}\n\nTEXT:\n${chunk}`).toPromise();
         const text = this.extractTextFromResponse(res);
         parts.push(text || chunk.slice(0, 400));
-      } catch (e) {
-        console.error('[Outline Chunk Error]', e);
+      } catch {
         parts.push(chunk.slice(0, 400));
       }
     }
@@ -844,8 +841,8 @@ For all other text: extract headings, topics, subtopics exactly as they appear.`
             ?.map(t => t.replace(/^[\d\.\-•]\s+/, '').trim())
             ?.filter(t => t.length > 3 && t.length < 50) || [];
           branches.push(...suggestions.slice(0, 5 - branches.length));
-        } catch (e) {
-          console.warn('[Fallback Topics] Using text-based extraction only');
+        } catch {
+          // fallback to text-based extraction only
         }
       }
       
@@ -864,8 +861,7 @@ For all other text: extract headings, topics, subtopics exactly as they appear.`
         rootDef: rootLabel,
         branches: uniqueBranches
       };
-    } catch (e) {
-      console.error('[Branches Extract Error]', e);
+    } catch {
       return null;
     }
   }
@@ -894,7 +890,6 @@ For all other text: extract headings, topics, subtopics exactly as they appear.`
     
     // Early exit for empty sections
     if (!section || section.trim().length < 20) {
-      console.warn(`[Empty Section] Branch "${branchName}" has insufficient content (${section?.length || 0} chars)`);
       return { id: `branch_${colorIdx}_${Math.random().toString(36).slice(2)}`, label: branchName, level: 1, definition: '', children: [], color, expanded: false };
     }
     
@@ -958,9 +953,7 @@ Return ONLY valid JSON (no markdown, no code fences):
       const parsed = JSON.parse(json);
       if (!parsed.label) throw new Error('missing label in parsed JSON');
       return this.initNodeWithColor(parsed, color, `branch_${colorIdx}`);
-    } catch (e: any) {
-      const errorMsg = (e as any)?.message || String(e);
-      console.error(`[Branch Build Error] "${branchName}": ${errorMsg}`);
+    } catch {
       return this.initNodeWithColor(this.buildLocalBranch(branchName, section, 1), color, `branch_${colorIdx}`);
     }
   }
@@ -973,78 +966,21 @@ Return ONLY valid JSON (no markdown, no code fences):
     // Short topic = keyword(s) typed by user (e.g. "Software Testing", "Machine Learning")
     const isShortTopic = !isContentBased && content.trim().split(/\s+/).length <= 20;
 
-    const topicPrompt = `You are an expert Visual Knowledge Architect, Mind Mapping Specialist, Learning Designer, and Information Structuring Expert.
+    const topicPrompt = `Create a JSON mind map for: "${content}"
 
-Create a highly detailed, professional, comprehensive mind map on: "${content}"
+Output ONLY valid JSON starting with { — no markdown, no explanation.
 
-OBJECTIVE: Transform complex information into a clear, structured, easy-to-understand visual knowledge system suitable for learning, teaching, revision, strategic planning, and presentations.
+Rules:
+- 8 primary branches (level 1) covering: Types/Categories, Core Concepts, Key Techniques, Tools/Technologies, Process/Workflow, Benefits/Advantages, Challenges/Limitations, Best Practices
+- 4-5 children per branch (level 2), 2-3 children per level-2 node (level 3)
+- Labels: 2-4 words, domain keywords only, no numbering
+- Definitions: 2 sentences each — what it is and why it matters
+- Strict parent→child hierarchy
 
-STRUCTURE RULES:
-1. Place "${content}" at the center (root, level 0).
-2. Create exactly 8-10 primary branches (level 1) covering ALL major dimensions.
-3. Under each primary branch:
-   - Add 5-8 secondary branches (level 2)
-   - Add 2-4 tertiary branches (level 3) where deeper explanation is needed
-   - Maintain strict logical parent-child relationships
+JSON format:
+{"root":{"id":"root","label":"${content}","level":0,"definition":"What ${content} is and its core purpose.","children":[{"id":"b1","label":"Types","level":1,"definition":"The main categories within this topic.","children":[{"id":"b1a","label":"Example Type","level":2,"definition":"What this type is and when it is used.","children":[{"id":"b1a1","label":"Specific Detail","level":3,"definition":"A specific aspect of this type.","children":[]}]}]}]}}
 
-REQUIRED BRANCH COVERAGE (pick the most relevant 8-10 for "${content}"):
-- Definition & Overview
-- Core Concepts & Theory
-- Key Components / Types / Categories
-- Frameworks & Methodologies
-- Processes & Workflows
-- Tools & Technologies
-- Real-world Applications & Examples
-- Benefits & Advantages
-- Challenges, Risks & Limitations
-- Best Practices & Expert Tips
-- Common Mistakes to Avoid
-- Implementation Strategy
-- Future Trends & Innovations
-- Actionable Recommendations
-
-NODE RULES:
-- Labels: concise keywords only, MAX 4 words per node — no sentences
-- NO numbering, NO bullet prefixes, NO punctuation in labels
-- Definitions: 3-5 complete sentences explaining what it is, how it works, why it matters, with a concrete example
-- NEVER leave "definition" empty
-- Keep children arrays in logical order (basic → advanced)
-- Remove any duplicate concepts across branches
-
-HIERARCHY QUALITY:
-- Root → Primary → Secondary → Tertiary (max 4 levels)
-- Each parent must clearly own its children
-- Children must be more specific than their parent
-- Group related sub-concepts together under the same parent
-
-Return ONLY valid JSON — no markdown, no code fences, no explanation text:
-{
-  "root": {
-    "id": "root",
-    "label": "${content}",
-    "level": 0,
-    "definition": "Comprehensive 3-5 sentence overview: what ${content} is, its core purpose, why it matters, and where it is used.",
-    "children": [
-      {
-        "id": "b1",
-        "label": "Core Concepts",
-        "level": 1,
-        "definition": "3-5 sentences about the fundamental theoretical foundations of ${content}.",
-        "children": [
-          {
-            "id": "b1a",
-            "label": "Exact Subtopic",
-            "level": 2,
-            "definition": "3-5 sentences about this subtopic.",
-            "children": [
-              { "id": "b1a1", "label": "Specific Detail", "level": 3, "definition": "3-5 sentences.", "children": [] }
-            ]
-          }
-        ]
-      }
-    ]
-  }
-}`;
+Now generate the complete 8-branch map with real content for "${content}". Return complete JSON only.`;
 
     const contentPrompt = `You are an expert Visual Knowledge Architect and Information Structuring Expert.
 
@@ -1098,8 +1034,7 @@ Return ONLY valid JSON (no markdown, no code fences):
     let res: any;
     try {
       res = await this.ai.generateWithGroq(prompt).toPromise();
-    } catch (e: any) {
-      console.error('[AI Request Failed]', e);
+    } catch {
       this.buildLocalMindMap(content, isContentBased);
       return;
     }
@@ -1443,8 +1378,7 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
       node.definition = text && !this.ai.isDemoFallback(text)
         ? text
         : this.makeLocalNodeDefinition(node);
-    } catch (e: any) {
-      console.error('[Definition Error]', e);
+    } catch {
       if (requestId !== this.definitionRequestId) return;
       node.definition = this.makeLocalNodeDefinition(node);
     } finally {
@@ -1532,25 +1466,18 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
     try {
       const json = this.extractJson(text);
       if (!json) {
-        console.error('[ParseRoot] No valid JSON found in response:', text.slice(0, 300));
         this.errorMsg = 'Could not parse response. Please try again.';
         return;
       }
       const data = JSON.parse(json);
-
-      // Handle both {root: {...}} and direct node {...} shapes
       const rawNode = data.root ?? data;
-
       if (!rawNode || typeof rawNode !== 'object' || !rawNode.label) {
-        console.error('[ParseRoot] Unexpected JSON shape:', JSON.stringify(data).slice(0, 200));
         this.errorMsg = 'Could not parse response. Please try again.';
         return;
       }
-
       this.rootNode = this.sanitizeMindTree(this.initNode(rawNode, 0));
       this.rootNode.expanded = true;
-    } catch (e) {
-      console.error('[ParseRoot Error]', e);
+    } catch {
       this.errorMsg = 'Could not parse response. Please try again.';
     }
   }
@@ -1958,8 +1885,7 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
       this.currentVideoMeta = map.videoMeta || null;
       this.progress = `✓ Loaded: "${map.title}"`;
       setTimeout(() => this.progress = '', 2000);
-    } catch (e) {
-      console.error('[Load Saved Error]', e);
+    } catch {
       this.errorMsg = 'Could not load saved map.';
     }
   }
@@ -2036,8 +1962,7 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
         context = await this.yt.getFullVideoContext(videoId).toPromise() as string || '';
         this.sourceContent = context || videoMeta.description || '';
       }
-    } catch (e) {
-      console.error('[YouTube Metadata Error]', e);
+    } catch {
       context = '';
     }
 
@@ -2059,8 +1984,8 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
           };
           this.currentVideoMeta = videoMeta;
         }
-      } catch (e) {
-        console.error('[oEmbed Error]', e);
+      } catch {
+        // oEmbed fallback failed, continue without title
       }
     }
 
@@ -2180,10 +2105,8 @@ Return ONLY valid JSON (no markdown, no code fences):
       if (!this.rootNode || this.errorMsg) {
         this.buildLocalYoutubeMindMap(videoMeta, context);
       }
-    } catch (e: any) {
-      if (this.errorMsg) return; // already set a specific message
-      const status = e?.status;
-      console.error('[YouTube Mind Map Error]', status, e);
+    } catch {
+      if (this.errorMsg) return;
       this.buildLocalYoutubeMindMap(videoMeta, context);
     }
   }

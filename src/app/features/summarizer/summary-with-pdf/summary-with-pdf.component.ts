@@ -638,8 +638,7 @@ export class SummaryWithPdfComponent implements OnInit {
       }
     ).then(() => {
       this.showStatus(`✓ Downloaded: Complete Study Material`, true);
-    }).catch(error => {
-      console.error('Download error:', error);
+    }).catch(() => {
       this.showStatus('Failed to download PDF', false);
     });
   }

@@ -242,6 +242,10 @@
           <span class="theme-text-secondary small">Loading definition...</span>
         </div>
 
+        <div *ngIf="!loadingDefinition && !selectedNode.definition" class="def-body">
+          <p class="theme-text-secondary small mb-0">No detailed definition yet for this node.</p>
+        </div>
+
         <div *ngIf="!loadingDefinition && selectedNode.definition" class="def-body">
           <ng-container *ngFor="let block of parseDefinition(selectedNode.definition)">
 
@@ -319,6 +323,10 @@
       </span>
 
       <span class="node-dot" [style.background]="node.color"></span>
+
+      <span *ngIf="node.orderPath" class="node-order" [style.color]="node.color">
+        {{ node.orderPath }}
+      </span>
 
       <span class="node-label"
         [class.node-label--root]="node.level === 0"

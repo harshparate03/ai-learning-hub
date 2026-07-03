@@ -79,17 +79,10 @@ export class YoutubeQuotaOptimizedService {
     // Check localStorage cache first
     const cached = this.getCachedResults(cacheKey);
     if (cached) {
-      console.log('[YouTube Search] Cache hit for query:', normalizedQuery);
-      return of({
-        success: true,
-        results: cached,
-        message: 'Results from cache (24h)'
-      });
+      return of({ success: true, results: cached, message: 'Results from cache (24h)' });
     }
 
-    // Prevent duplicate in-flight requests
     if (this.pendingRequests.has(normalizedQuery)) {
-      console.log('[YouTube Search] Duplicate request prevented:', normalizedQuery);
       return this.pendingRequests.get(normalizedQuery)!;
     }
 
@@ -106,7 +99,6 @@ export class YoutubeQuotaOptimizedService {
    * Make actual API request to YouTube
    */
   private makeAPIRequest(query: string, cacheKey: string): Observable<SearchResponse> {
-    console.log('[YouTube Search] Making API request for:', query);
 
     return new Observable(observer => {
       this.http.get<any>(this.SEARCH_URL, {
@@ -134,7 +126,7 @@ export class YoutubeQuotaOptimizedService {
         error: (error: HttpErrorResponse) => {
           const errBody = error.error || {};
           const errMsg = errBody.error?.message || errBody.message || 'Unknown error';
-          console.error('[YouTube Search] API Error:', error.status, errMsg);
+          console.warn('[YouTube Search] API Error:', error.status);
 
           // Check if quota exceeded
           if (this.isQuotaExceededError(error)) {
@@ -278,6 +270,5 @@ export class YoutubeQuotaOptimizedService {
       }
     }
     keys.forEach(key => localStorage.removeItem(key));
-    console.log('[YouTube Search] Cache cleared');
   }
 }

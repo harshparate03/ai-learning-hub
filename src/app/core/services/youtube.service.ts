@@ -1,9 +1,9 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable, of, forkJoin } from 'rxjs';
 import { map, catchError, switchMap } from 'rxjs/operators';
-import { environment } from '../../../environments/environment';
 import { sanitizeUserInput } from '../utils/sanitize.util';
+import { environment } from '../../../environments/environment';
 
 /** Curated list of verified real educational YouTube videos */
 const CURATED_VIDEOS: { videoId: string; title: string; channel: string; tags: string[] }[] = [
@@ -26,7 +26,7 @@ const CURATED_VIDEOS: { videoId: string; title: string; channel: string; tags: s
   { videoId: 'HXV3zeQKqGY', title: 'SQL Tutorial - Full Database Course for Beginners', channel: 'freeCodeCamp.org', tags: ['sql','database','mysql','postgresql','data'] },
   { videoId: 'xiUTqnI6xk8', title: 'MySQL Tutorial for Beginners', channel: 'Programming with Mosh', tags: ['mysql','sql','database','beginner'] },
   // Computer Science / CS50
-  { videoId: '8mAITcNt710', title: 'Harvard CS50 – Full Computer Science University Course', channel: 'freeCodeCamp.org', tags: ['computer science','cs50','harvard','fundamentals','cs'] },
+  { videoId: '8mAITcNt710', title: 'Harvard CS50 â€“ Full Computer Science University Course', channel: 'freeCodeCamp.org', tags: ['computer science','cs50','harvard','fundamentals','cs'] },
   // Machine Learning / AI
   { videoId: 'aircAruvnKk', title: 'But what is a neural network? | Deep learning', channel: '3Blue1Brown', tags: ['neural network','deep learning','ai','machine learning'] },
   { videoId: 'Gv9_4yMHFhI', title: 'Machine Learning for Everybody', channel: 'freeCodeCamp.org', tags: ['machine learning','ml','ai','beginner','data science'] },
@@ -88,23 +88,18 @@ const CURATED_VIDEOS: { videoId: string; title: string; channel: string; tags: s
 @Injectable({ providedIn: 'root' })
 export class YoutubeService {
 
-  private API_KEYS: string[] = [];
-  private keyIndex = 0;
-  private get KEY(): string { return this.API_KEYS[this.keyIndex % this.API_KEYS.length]; }
-  private get hasApiKey(): boolean { return this.API_KEYS.length > 0; }
+  private readonly KEY        = environment.youtubeApiKey || '';
+  get hasApiKey(): boolean     { return !!this.KEY; }
 
-  private SEARCH_URL = '/api/youtube-search';
-  private VIDEO_URL  = '/api/youtube-details';
+  private readonly SEARCH_URL = '/api/youtube-search';
+  private readonly VIDEO_URL  = '/api/youtube-details';
+  private readonly OEMBED_URL = 'https://www.youtube.com/oembed';
+  private readonly GROQ_URL   = 'https://api.groq.com/openai/v1/chat/completions';
+  private readonly GROQ_KEY   = environment.groqApiKey || '';
 
-  constructor(private http: HttpClient) {
-    // Initialize with YouTube API key from environment
-    if (environment.youtubeApiKey) {
-      this.API_KEYS = [environment.youtubeApiKey];
-      console.log('[YouTube Service] API key configured ✓');
-    }
-  }
+  constructor(private http: HttpClient) {}
 
-  // ── SEARCH ────────────────────────────────────────────────────────────────
+  // â”€â”€ SEARCH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /** Context-aware study topic suggestions based on partial query. */
   getStudySuggestions(query: string): string[] {
@@ -167,18 +162,12 @@ export class YoutubeService {
 
   searchVideos(query: string): Observable<any> {
     const safeQuery = sanitizeUserInput(query, 200);
-
-    // No valid YouTube Data API key — go straight to AI+curated fallback
-    if (!this.hasApiKey) {
-      console.warn('[YouTube] No API key configured — using AI+curated fallback.');
-      return this.searchWithAIFallback(safeQuery);
-    }
-
+    // Try proxy/API — fallback to curated if it fails
     return this.http.get(this.SEARCH_URL, {
       params: { q: safeQuery, type: 'video', maxResults: '12' }
     }).pipe(
-      catchError((err) => {
-        console.warn('[YouTube] Data API failed:', err?.status, err?.error?.error?.message);
+      catchError(() => {
+        console.warn('[YouTube] API unavailable, using curated fallback');
         return this.searchWithAIFallback(safeQuery);
       })
     );
@@ -187,10 +176,10 @@ export class YoutubeService {
   /**
    * Two-stage fallback when the YouTube Data API key is invalid/quota exceeded:
    *
-   * Stage 1 — Curated match: score CURATED_VIDEOS against the query keywords.
+   * Stage 1 â€” Curated match: score CURATED_VIDEOS against the query keywords.
    *            Returns instantly, no extra network call.
    *
-   * Stage 2 — AI + oEmbed: ask Groq for video IDs, validate each via oEmbed,
+   * Stage 2 â€” AI + oEmbed: ask Groq for video IDs, validate each via oEmbed,
    *            keep only IDs that actually exist. Runs in parallel with stage 1
    *            to supplement results.
    */
@@ -234,15 +223,7 @@ export class YoutubeService {
   }
 
   private searchViaAIAndOEmbed(query: string, existingItems: any[]): Observable<any> {
-    const GROQ_PROXY_URL = '/api/groq';
-    const GROQ_KEY = environment.groqApiKey;
-
     const existingIds = new Set(existingItems.map(v => v.id.videoId));
-    
-    // If no Groq key, return curated results only
-    if (!GROQ_KEY) {
-      return of({ items: existingItems, _source: 'curated' });
-    }
 
     const prompt = `You are a comprehensive YouTube video search assistant.
 Search topic: "${query}"
@@ -256,7 +237,7 @@ Prioritize:
 4. Any other popular channel covering the topic
 Each video ID must be exactly 11 characters.
 
-Return ONLY a JSON array — no markdown, no explanation:
+Return ONLY a JSON array â€” no markdown, no explanation:
 [{"videoId":"EXACT_11_CHAR_ID","title":"Real Title","channel":"Channel Name"}]`;
 
     const body = {
@@ -266,9 +247,8 @@ Return ONLY a JSON array — no markdown, no explanation:
       max_tokens: 1000
     };
 
-    return this.http.post(GROQ_PROXY_URL, body, {
-      withCredentials: false
-    }).pipe(
+    const groqHeaders = new HttpHeaders({ 'Authorization': `Bearer ${this.GROQ_KEY}`, 'Content-Type': 'application/json' });
+    return this.http.post(this.GROQ_URL, body, { headers: groqHeaders }).pipe(
       switchMap((res: any) => {
         const text = res?.choices?.[0]?.message?.content || '';
         let candidates: { videoId: string; title: string; channel: string }[] = [];
@@ -288,10 +268,8 @@ Return ONLY a JSON array — no markdown, no explanation:
 
         // Validate each via oEmbed
         const checks = toValidate.map(c =>
-          this.http.get(
-            `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${c.videoId}&format=json`
-          ).pipe(
-            map((oe: any) => ({
+          this.getOEmbed(c.videoId).pipe(
+            map((oe: any) => oe ? {
               id: { videoId: c.videoId },
               snippet: {
                 title: oe.title || c.title,
@@ -300,7 +278,7 @@ Return ONLY a JSON array — no markdown, no explanation:
                 thumbnails: { medium: { url: this.getThumbnail(c.videoId) } }
               },
               _source: 'ai-validated'
-            })),
+            } : null),
             catchError(() => of(null))
           )
         );
@@ -321,27 +299,17 @@ Return ONLY a JSON array — no markdown, no explanation:
   }
 
   getVideoDetails(videoId: string): Observable<any> {
-    // No valid key — return empty so callers fall back to oEmbed
-    if (!this.hasApiKey) {
-      return of({ items: [] });
-    }
     return this.http.get(this.VIDEO_URL, {
       params: { id: videoId, part: 'snippet,statistics,contentDetails' }
     }).pipe(
-      catchError(() => {
-        this.keyIndex++;
-        if (!this.hasApiKey) return of({ items: [] });
-        return this.http.get(this.VIDEO_URL, {
-          params: { id: videoId, part: 'snippet,statistics,contentDetails' }
-        }).pipe(catchError(() => of({ items: [] })));
-      })
+      catchError(() => of({ items: [] }))
     );
   }
 
   getOEmbed(videoId: string): Observable<any> {
-    return this.http.get(
-      `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
-    ).pipe(catchError(() => of(null)));
+    return this.http.get(this.OEMBED_URL, {
+      params: { url: `https://www.youtube.com/watch?v=${videoId}`, format: 'json' }
+    }).pipe(catchError(() => of(null)));
   }
 
   getFullVideoContext(videoId: string): Observable<string> {
@@ -417,3 +385,5 @@ DESCRIPTION:\n${descClean}`);
     return n;
   }
 }
+
+
