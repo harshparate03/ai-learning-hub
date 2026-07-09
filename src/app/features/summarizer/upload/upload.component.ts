@@ -67,6 +67,7 @@ export class UploadComponent implements OnInit {
   copiedIndex: number = -1;
   detectedSubject: string = '';
   savedMsg: string = '';
+  isSaving: boolean = false;
 
   constructor(private ai: AiService, private pdf: PdfService) {}
 
@@ -268,6 +269,8 @@ export class UploadComponent implements OnInit {
     this.pdfImages = [];
     this.chunkResults = [];
     this.detectedSubject = '';
+    this.savedMsg = '';
+    this.isSaving = false;
 
     const content = this.cleanPdfText(this.mode === 'text' ? this.inputText : this.fileContent);
     // Use larger chunks to reduce number of API calls (fewer = less rate limiting)
@@ -1397,26 +1400,43 @@ Output JSON now:`;
   }
 
   saveToHistory() {
-    if (!this.topics.length) return;
+    if (!this.topics.length || this.isSaving) return;
+    this.isSaving = true;
+
     const title = this.detectedSubject || this.fileName || 'Study Notes';
     try {
       const history = JSON.parse(localStorage.getItem('summarizer_history') || '[]');
-      history.unshift({
-        type: 'summary',
-        title,
-        date: new Date().toLocaleDateString(),
-        preview: this.topics[0]?.explanation?.replace(/\*\*(.*?)\*\*/g, '$1')?.slice(0, 100) || '',
-        content: this.topics.map(t => `${t.title.replace(/\*\*(.*?)\*\*/g,'')}: ${t.explanation.replace(/\*\*(.*?)\*\*/g,'$1')}`).join('\n'),
-        topics: JSON.parse(JSON.stringify(this.topics)),
-        questions: JSON.parse(JSON.stringify(this.questions))
-      });
-      localStorage.setItem('summarizer_history', JSON.stringify(history.slice(0, 50)));
-      this.savedMsg = 'Saved!';
+
+      // Duplicate guard — same title + same first topic = same content, skip
+      const firstTopic = this.topics[0]?.title?.replace(/\*\*/g, '').trim() || '';
+      const isDuplicate = history.some((h: any) =>
+        h.title === title &&
+        h.topics?.[0]?.title?.replace(/\*\*/g, '').trim() === firstTopic
+      );
+
+      if (isDuplicate) {
+        this.savedMsg = 'Already saved!';
+      } else {
+        history.unshift({
+          type: 'summary',
+          title,
+          date: new Date().toLocaleDateString(),
+          preview: this.topics[0]?.explanation?.replace(/\*\*(.*?)\*\*/g, '$1')?.slice(0, 100) || '',
+          content: this.topics.map(t => `${t.title.replace(/\*\*(.*?)\*\*/g,'')}: ${t.explanation.replace(/\*\*(.*?)\*\*/g,'$1')}`).join('\n'),
+          topics: JSON.parse(JSON.stringify(this.topics)),
+          questions: JSON.parse(JSON.stringify(this.questions))
+        });
+        localStorage.setItem('summarizer_history', JSON.stringify(history.slice(0, 50)));
+        this.savedMsg = 'Saved!';
+      }
     } catch (e: any) {
-      // QuotaExceededError or JSON parse error
       this.savedMsg = 'Could not save (storage full)';
     }
-    setTimeout(() => this.savedMsg = '', 2500);
+
+    setTimeout(() => {
+      this.savedMsg = '';
+      this.isSaving = false;
+    }, 2500);
   }
 
   private cleanPdfText(text: string): string {
