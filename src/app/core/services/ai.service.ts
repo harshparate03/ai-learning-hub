@@ -22,7 +22,7 @@ export class AiService {
 
   private readonly GROQ_DIRECT_URL = 'https://api.groq.com/openai/v1/chat/completions';
   private readonly GROQ_PROXY_URL  = '/api/groq';
-  private readonly ON_DEMAND_TOKEN_LIMIT = 7000; // keep total input + output below Groq on-demand TPM
+  private readonly ON_DEMAND_TOKEN_LIMIT = 28000; // safe budget per request (Groq free: 30k TPM)
 
   // Two API keys — primary and fallback
   private readonly API_KEYS: string[] = [
@@ -40,11 +40,12 @@ export class AiService {
     }
   }
 
-  // Current Groq production models. Avoid preview IDs because they can disappear without notice.
+  // Current Groq production models — verified working July 2026
   private readonly GROQ_MODELS: GroqModel[] = [
-    { id: 'llama-3.3-70b-versatile', contextTokens: 131072, maxOutputTokens: 3072 },
-    { id: 'llama-3.1-8b-instant',    contextTokens: 131072, maxOutputTokens: 3072 },
-    { id: 'openai/gpt-oss-20b',      contextTokens: 131072, maxOutputTokens: 3072 },
+    { id: 'llama-3.3-70b-versatile',              contextTokens: 131072, maxOutputTokens: 3072 },
+    { id: 'llama-3.1-8b-instant',                 contextTokens: 131072, maxOutputTokens: 3072 },
+    { id: 'meta-llama/llama-4-scout-17b-16e-instruct', contextTokens: 131072, maxOutputTokens: 3072 },
+    { id: 'qwen/qwen3-32b',                       contextTokens: 131072, maxOutputTokens: 3072 },
   ];
 
   static readonly PROXY_ERROR =
@@ -62,26 +63,27 @@ export class AiService {
     const body = { model: model.id, messages, temperature: 0.3, max_tokens: maxOutputTokens };
     const key = this.API_KEY;
 
-    if (key) {
+    const directCall = (authKey: string) => {
       const headers = new HttpHeaders({
-        'Authorization': `Bearer ${key}`,
+        'Authorization': `Bearer ${authKey}`,
         'Content-Type': 'application/json'
       });
-      return this.http.post(this.GROQ_DIRECT_URL, body, { headers }).pipe(
+      return this.http.post(this.GROQ_DIRECT_URL, body, { headers });
+    };
+
+    if (key) {
+      return directCall(key).pipe(
         catchError(directErr => {
           const s = directErr?.status;
-          // On 429: rotate key, wait 8s, then retry with new key
+
+          // 429: rotate key, wait 8s, retry with new key
           if (s === 429) {
             this.rotateKey();
-            const retryHeaders = new HttpHeaders({
-              'Authorization': `Bearer ${this.API_KEY}`,
-              'Content-Type': 'application/json'
-            });
             return timer(8000).pipe(
-              switchMap(() => this.http.post(this.GROQ_DIRECT_URL, body, { headers: retryHeaders }).pipe(
+              switchMap(() => directCall(this.API_KEY).pipe(
                 catchError(retryErr => {
-                  // If still 429 after retry, try proxy as last resort
                   if (retryErr?.status === 429) {
+                    // Still rate limited — try proxy
                     return timer(5000).pipe(
                       switchMap(() => this.http.post(this.GROQ_PROXY_URL, body))
                     );
@@ -91,24 +93,28 @@ export class AiService {
               ))
             );
           }
-          // On 401: rotate key and retry once immediately
+
+          // 401: rotate key and retry once
           if (s === 401 && this.API_KEYS.length > 1) {
             this.rotateKey();
-            const retryHeaders = new HttpHeaders({
-              'Authorization': `Bearer ${this.API_KEY}`,
-              'Content-Type': 'application/json'
-            });
-            return this.http.post(this.GROQ_DIRECT_URL, body, { headers: retryHeaders });
+            return directCall(this.API_KEY).pipe(
+              catchError(() => throwError(() => directErr))
+            );
           }
-          // Network error — try proxy
-          if (s === 0) {
-            return this.http.post(this.GROQ_PROXY_URL, body);
+
+          // Network error (status 0) or any other — try proxy as fallback
+          if (s === 0 || s == null) {
+            return this.http.post(this.GROQ_PROXY_URL, body).pipe(
+              catchError(() => throwError(() => directErr))
+            );
           }
+
           return throwError(() => directErr);
         })
       );
     }
-    // No key — try serverless proxy
+
+    // No key — use proxy directly
     return this.http.post(this.GROQ_PROXY_URL, body);
   }
 
@@ -160,11 +166,20 @@ export class AiService {
 
     const tryModel = (idx: number): Observable<any> => {
       if (idx >= this.GROQ_MODELS.length) {
-        return throwError(() => lastErr || {
-          status: 503,
-          message: 'All AI models are currently unavailable. Please try again later.'
-        });
+        // All models failed — last attempt via proxy with first model
+        const model = this.GROQ_MODELS[0];
+        const safeOutput = Math.min(maxOutputTokens, model.maxOutputTokens);
+        const fittedMessages = this.fitToContext(messages, model, safeOutput);
+        const body = { model: model.id, messages: fittedMessages, temperature: 0.3, max_tokens: safeOutput };
+        return this.http.post(this.GROQ_PROXY_URL, body).pipe(
+          timeout(60000),
+          catchError(() => throwError(() => lastErr || {
+            status: 503,
+            message: 'All AI models are currently unavailable. Please try again later.'
+          }))
+        );
       }
+
       const model = this.GROQ_MODELS[idx];
       const safeOutput = Math.min(maxOutputTokens, model.maxOutputTokens);
       const fittedMessages = this.fitToContext(messages, model, safeOutput);
@@ -174,17 +189,20 @@ export class AiService {
         catchError(err => {
           const status = err?.status;
           lastErr = err;
-          console.warn(`[Groq] ${model.id} failed (${status || 'unknown'}), trying next model...`);
+          console.warn(`[Groq] ${model.id} failed (${status ?? 'unknown'}), trying next model...`);
 
-          if (status === 401 || status === 403 || status === 0) return throwError(() => err);
+          // Hard stops — bad key, don't loop further
+          if (status === 401 || status === 403) return throwError(() => err);
 
-          // 429: rotate key, wait longer, then try next model
+          // 429: rotate key, wait, then try next model
           if (status === 429) {
             this.rotateKey();
             return timer(12000).pipe(switchMap(() => tryModel(idx + 1)));
           }
 
-          const wait$ = timer(500);
+          // status 0 = network unreachable — try next model after short wait
+          // (don't stop the chain; proxy might still work)
+          const wait$ = status === 0 ? timer(1000) : timer(500);
           return wait$.pipe(switchMap(() => tryModel(idx + 1)));
         })
       );
