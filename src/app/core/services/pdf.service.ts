@@ -414,24 +414,77 @@ export class PdfService {
   }
 
   private bullet(text: string, style?: string, level?: number) {
-    const d   = this.doc;
+    const d = this.doc;
     const cleanText = this.clean(text);
-    const ls  = d.splitTextToSize(cleanText, this.CW - 12);
-    const lnH = 5.6;
+    const depth = Math.max(0, Math.min(3, (level || 1) - 1));
+    const left = this.ML + depth * 5;
+    const markerX = left + 2.8;
+    const textX = left + 7.5;
+    const usableWidth = this.CW - (textX - this.ML) - 2;
+    const ls = d.splitTextToSize(cleanText, usableWidth);
+    const lnH = 5.4;
     this.need(ls.length * lnH + 2);
 
-    d.setFillColor(...v(C.indigo));
-    d.circle(this.ML + 3, this.y + 3.4, 1.25, 'F');
+    this.drawBulletMarker(style, markerX, this.y + 3.2, level);
 
     d.setFont('helvetica', 'normal');
-    d.setFontSize(10);
+    d.setFontSize(level && level > 1 ? 9.4 : 9.8);
     d.setTextColor(...v(C.textB));
 
     ls.forEach((l: string, i: number) => {
       this.need(lnH);
-      d.text(l, this.ML + 8, this.y + 3.8 + i * lnH);
+      d.text(l, textX, this.y + 3.7 + i * lnH);
     });
-    this.y += ls.length * lnH + 0.3;
+    this.y += ls.length * lnH + 0.5;
+  }
+
+  private drawBulletMarker(style: string | undefined, x: number, y: number, level?: number) {
+    const d = this.doc;
+    const normalized = (style || (level && level > 1 ? 'hollow-circle' : 'dot')).toLowerCase();
+    const primary = level && level > 1 ? C.purple : C.indigo;
+    d.setDrawColor(...v(primary));
+    d.setFillColor(...v(primary));
+    d.setLineWidth(0.45);
+
+    switch (normalized) {
+      case 'hollow':
+      case 'hollow-circle':
+        d.circle(x, y, 0.72, 'S');
+        break;
+      case 'square':
+      case 'solid-square':
+      case 'large-square':
+        d.rect(x - 0.62, y - 0.62, 1.24, 1.24, 'F');
+        break;
+      case 'hollow-square':
+        d.rect(x - 0.68, y - 0.68, 1.36, 1.36, 'S');
+        break;
+      case 'em-dash':
+      case 'en-dash':
+        d.line(x - 1.25, y, x + 1.25, y);
+        break;
+      case 'arrow':
+      case 'chevron':
+      case 'double-chevron':
+      case 'triangle':
+        d.line(x - 0.9, y - 0.75, x + 0.75, y);
+        d.line(x + 0.75, y, x - 0.9, y + 0.75);
+        break;
+      case 'diamond':
+        d.lines([[0.72, -0.72], [0.72, 0.72], [-0.72, 0.72], [-0.72, -0.72]], x - 0.72, y, [1, 1], 'F', true);
+        break;
+      case 'checkmark':
+        d.line(x - 0.9, y, x - 0.25, y + 0.65);
+        d.line(x - 0.25, y + 0.65, x + 0.95, y - 0.75);
+        break;
+      case 'crossmark':
+        d.line(x - 0.75, y - 0.75, x + 0.75, y + 0.75);
+        d.line(x + 0.75, y - 0.75, x - 0.75, y + 0.75);
+        break;
+      default:
+        d.circle(x, y, 0.55, 'F');
+        break;
+    }
   }
 
   private definition(term: string, def: string) {

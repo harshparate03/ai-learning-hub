@@ -17,6 +17,7 @@ export default async function handler(req, res) {
   }
 
   try {
+    const MAX_GROQ_OUTPUT_TOKENS = 3072;
     const { model, messages, temperature, max_tokens } = req.body;
 
     if (!model || !messages) {
@@ -33,7 +34,7 @@ export default async function handler(req, res) {
         model,
         messages,
         temperature: temperature ?? 0.3,
-        max_tokens:  max_tokens  ?? 8192
+        max_tokens:  Math.min(Number(max_tokens) || MAX_GROQ_OUTPUT_TOKENS, MAX_GROQ_OUTPUT_TOKENS)
       })
     });
 
@@ -51,3 +52,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Internal proxy error', message: err.message });
   }
 }
+

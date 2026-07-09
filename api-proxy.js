@@ -1,4 +1,4 @@
-﻿const path = require('path');
+const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const express = require('express');
@@ -10,6 +10,7 @@ const PORT = process.env.API_PROXY_PORT || 3001;
 // Always use env key first, fallback to hardcoded key
 const GROQ_API_KEY = process.env.GROQ_API_KEY || 'GROQ_API_KEY_PLACEHOLDER';
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || '';
+const MAX_GROQ_OUTPUT_TOKENS = 3072;
 
 // Middleware
 app.use(cors());
@@ -21,7 +22,7 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// â”€â”€â”€ GROQ API PROXY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── GROQ API PROXY ─────────────────────────────────────────────────────────
 app.post('/api/groq', async (req, res) => {
   try {
     const { model, messages, temperature, max_tokens } = req.body;
@@ -40,7 +41,7 @@ app.post('/api/groq', async (req, res) => {
         model,
         messages,
         temperature: temperature || 0.3,
-        max_tokens: max_tokens || 8192
+        max_tokens: Math.min(Number(max_tokens) || MAX_GROQ_OUTPUT_TOKENS, MAX_GROQ_OUTPUT_TOKENS)
       })
     });
 
@@ -61,7 +62,7 @@ app.post('/api/groq', async (req, res) => {
   }
 });
 
-// â”€â”€â”€ YOUTUBE API PROXY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── YOUTUBE API PROXY ─────────────────────────────────────────────────────
 app.get('/api/youtube-search', async (req, res) => {
   try {
     const { q, maxResults, type, videoEmbeddable, order, relevanceLanguage, videoCategoryId } = req.query;
@@ -107,7 +108,7 @@ app.get('/api/youtube-search', async (req, res) => {
   }
 });
 
-// â”€â”€â”€ YOUTUBE VIDEO DETAILS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── YOUTUBE VIDEO DETAILS ─────────────────────────────────────────────────
 app.get('/api/youtube-details', async (req, res) => {
   try {
     const { id, part } = req.query;
@@ -144,7 +145,7 @@ app.get('/api/youtube-details', async (req, res) => {
   }
 });
 
-// ─── YOUTUBE OEMBED PROXY (avoids browser CORS) ─────────────────────────────
+// --- YOUTUBE OEMBED PROXY (avoids browser CORS) -----------------------------
 app.get('/api/youtube-oembed', async (req, res) => {
   try {
     const { url } = req.query;
@@ -166,13 +167,14 @@ app.get('/api/youtube-oembed', async (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`\nâœ… API Proxy Server running on http://localhost:${PORT}`);
+  console.log(`\n✅ API Proxy Server running on http://localhost:${PORT}`);
   console.log(`   Health check: http://localhost:${PORT}/health`);
   console.log(`   Groq proxy: POST http://localhost:${PORT}/api/groq`);
   console.log(`   YouTube search: GET http://localhost:${PORT}/api/youtube-search?q=...`);
   console.log(`   YouTube details: GET http://localhost:${PORT}/api/youtube-details?id=...`);
   console.log(`\n   Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`   Groq API Key: ${GROQ_API_KEY && GROQ_API_KEY.length > 5 ? 'âœ“ Set' : 'âœ— Missing'}`);
-  console.log(`   YouTube API Key: ${YOUTUBE_API_KEY && YOUTUBE_API_KEY.length > 5 ? 'âœ“ Set' : 'âœ— Missing'}\n`);
+  console.log(`   Groq API Key: ${GROQ_API_KEY && GROQ_API_KEY.length > 5 ? '✓ Set' : '✗ Missing'}`);
+  console.log(`   YouTube API Key: ${YOUTUBE_API_KEY && YOUTUBE_API_KEY.length > 5 ? '✓ Set' : '✗ Missing'}\n`);
 });
+
 
