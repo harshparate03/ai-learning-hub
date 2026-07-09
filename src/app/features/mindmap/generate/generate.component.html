@@ -306,7 +306,7 @@
 
 <!-- ── TREE NODE TEMPLATE ── -->
 <ng-template #treeNode let-node="node" let-depth="depth">
-  <div class="node-wrap" [style.padding-left.px]="depth * 12">
+  <div class="node-wrap" [style.padding-left.px]="depth * 10">
 
     <div class="tree-node"
       [class.tree-node--selected]="selectedNode?.id === node.id"
@@ -319,10 +319,12 @@
           <svg *ngIf="node.expanded"  width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
           <svg *ngIf="!node.expanded" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
         </ng-container>
-        <svg *ngIf="!hasChildren(node)" width="6" height="6" viewBox="0 0 10 10"><circle cx="5" cy="5" r="5" fill="currentColor" opacity=".4"/></svg>
+        <svg *ngIf="!hasChildren(node)" width="5" height="5" viewBox="0 0 10 10"><circle cx="5" cy="5" r="3" fill="currentColor" opacity=".35"/></svg>
       </span>
 
-      <span class="node-dot" [style.background]="node.color"></span>
+      <span class="node-dot" [style.background]="node.color"
+        [style.width.px]="node.level === 0 ? 8 : node.level === 1 ? 7 : node.level === 2 ? 6 : 5"
+        [style.height.px]="node.level === 0 ? 8 : node.level === 1 ? 7 : node.level === 2 ? 6 : 5"></span>
 
       <span *ngIf="node.orderPath" class="node-order" [style.color]="node.color">
         {{ node.orderPath }}
@@ -331,6 +333,8 @@
       <span class="node-label"
         [class.node-label--root]="node.level === 0"
         [class.node-label--branch]="node.level === 1"
+        [class.node-label--l2]="node.level === 2"
+        [class.node-label--l3]="node.level === 3"
         [class.node-label--deep]="node.level >= 4">
         {{ node.label }}
       </span>
@@ -340,7 +344,12 @@
       </span>
     </div>
 
-    <div *ngIf="node.expanded && node.children.length > 0" class="node-children">
+    <div *ngIf="node.expanded && node.children.length > 0" class="node-children"
+      [class.node-children--l1]="node.level === 0"
+      [class.node-children--l2]="node.level === 1"
+      [class.node-children--l3]="node.level === 2"
+      [class.node-children--l4]="node.level === 3"
+      [class.node-children--deep]="node.level >= 4">
       <ng-container *ngFor="let child of node.children">
         <ng-container *ngTemplateOutlet="treeNode; context: { node: child, depth: depth + 1 }"></ng-container>
       </ng-container>

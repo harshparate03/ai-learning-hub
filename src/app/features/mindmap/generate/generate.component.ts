@@ -1060,20 +1060,34 @@ Return ONLY valid JSON (no markdown, no code fences):
       const contentPrompt =
 `You must output ONLY a single valid JSON object. No markdown fences, no explanation, no extra text.
 
-Build a mind map from this content. The JSON must follow this exact structure:
-{"root":{"id":"root","label":"TITLE","level":0,"definition":"What this content is about in 2 sentences.","children":[{"id":"b1","label":"Branch Name","level":1,"definition":"What this branch covers.","children":[{"id":"b1c1","label":"Subtopic","level":2,"definition":"Details.","children":[{"id":"b1c1d1","label":"Detail","level":3,"definition":"Specific point.","children":[]}]}]}]}}
+Build a deep hierarchical mind map from this content. Required 4-level structure:
+Level 0: Root (main title of the content)
+Level 1: 6-8 major branches (actual sections from the content)
+Level 2: 4 subtopics per branch (key concepts within each section)
+Level 3: 3 aspects per subtopic (specific points/methods/examples)
+Level 4: 2 details per aspect (concrete facts or sub-examples)
+
+JSON structure:
+{"root":{"id":"root","label":"TITLE","level":0,"definition":"2-sentence overview.","children":[
+  {"id":"b1","label":"Branch","level":1,"definition":"What this section covers.","children":[
+    {"id":"b1s1","label":"Subtopic","level":2,"definition":"Key concept.","children":[
+      {"id":"b1s1a1","label":"Aspect","level":3,"definition":"Specific point.","children":[
+        {"id":"b1s1a1d1","label":"Detail","level":4,"definition":"Concrete fact.","children":[]},
+        {"id":"b1s1a1d2","label":"Detail","level":4,"definition":"Concrete fact.","children":[]}
+      ]}
+    ]}
+  ]}
+]}}
 
 CONTENT TO ANALYZE:
 ${snippet}
 
-Requirements:
-- label at root = the main title/topic of the content
-- 6 to 8 branches = the actual major sections/themes found in the content above
-- Each branch: 3-5 level-2 children
-- Each level-2 child: 2-3 level-3 children
-- All labels: 2-5 words, taken directly from the content
-- Definitions: factual, from the content only
-- Output the complete JSON now:`;
+Rules:
+- root label = the main title/topic found in the content
+- All branch labels = actual section headings or major themes from the content
+- All subtopic labels = real concepts extracted from the content
+- All definitions = factual, taken directly from the content
+- Output the COMPLETE JSON now with all 4 levels populated:`;
 
       let res: any;
       try {
@@ -1131,7 +1145,7 @@ Output 8 lines only:`, 512
       branchNames.push(`Branch ${branchNames.length + 1}`);
     }
 
-    // Step 2: Build each branch independently (avoids truncation)
+    // Step 2: Build each branch independently with 4-level deep hierarchy
     this.progress = 'Building branches...';
     const COLORS_LOCAL = this.COLORS;
 
@@ -1139,46 +1153,80 @@ Output 8 lines only:`, 512
       const color = COLORS_LOCAL[idx % COLORS_LOCAL.length];
       try {
         const res: any = await this.ai.generateWithGroq(
-`Output ONLY a JSON object for one mind map branch. No markdown, no extra text.
+`Output ONLY a valid JSON object. No markdown, no explanation, no code fences.
 
+Create a DEEP hierarchical mind map branch for:
 Topic: "${topic}"
 Branch: "${branchName}"
 
-JSON structure:
-{"label":"${branchName}","level":1,"definition":"2-sentence explanation of ${branchName} in ${topic}.","children":[{"label":"subtopic","level":2,"definition":"2 sentences.","children":[{"label":"detail","level":3,"definition":"1 sentence.","children":[]}]}]}
+Required 4-level structure:
+- Level 1: "${branchName}" (the branch root)
+  - Level 2: 4 specific subtopics of ${branchName}
+    - Level 3: 3 concrete aspects/concepts under each subtopic
+      - Level 4: 2 specific details/examples under each aspect
 
-Fill in 4 real children at level 2, each with 2-3 children at level 3. All labels 2-4 words specific to ${topic}/${branchName}. Output JSON now:`, 1024
+Rules:
+- Every label must be 2-5 words, specific to ${topic}/${branchName}
+- Every definition must be 1-2 informative sentences
+- NO generic labels like "Overview", "Introduction", "Details"
+- All labels must be unique across the tree
+- Keep children arrays populated at ALL levels (never empty except level 4)
+
+JSON format (fill ALL placeholders with real content):
+{
+  "label": "${branchName}",
+  "level": 1,
+  "definition": "What ${branchName} means in context of ${topic}.",
+  "children": [
+    {
+      "label": "Specific Subtopic A",
+      "level": 2,
+      "definition": "What this subtopic covers.",
+      "children": [
+        {
+          "label": "Concrete Aspect 1",
+          "level": 3,
+          "definition": "Explanation of this aspect.",
+          "children": [
+            {"label": "Specific Detail", "level": 4, "definition": "One specific example or fact.", "children": []},
+            {"label": "Specific Detail", "level": 4, "definition": "One specific example or fact.", "children": []}
+          ]
+        },
+        {
+          "label": "Concrete Aspect 2",
+          "level": 3,
+          "definition": "Explanation.",
+          "children": [
+            {"label": "Specific Detail", "level": 4, "definition": "Fact or example.", "children": []},
+            {"label": "Specific Detail", "level": 4, "definition": "Fact or example.", "children": []}
+          ]
+        },
+        {
+          "label": "Concrete Aspect 3",
+          "level": 3,
+          "definition": "Explanation.",
+          "children": [
+            {"label": "Specific Detail", "level": 4, "definition": "Fact or example.", "children": []}
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+Now output the complete JSON with 4 level-2 children, each having 3 level-3 children, each having 2 level-4 children. Use REAL content about ${topic}/${branchName}:`, 2048
         ).toPromise();
         const text = this.extractTextFromResponse(res);
         const json = this.extractJson(text);
         if (!json) throw new Error('no json');
         const parsed = JSON.parse(json);
         if (!parsed?.label) throw new Error('no label');
-        return this.initNodeWithColor({ ...parsed, level: 1 }, color, `b${idx}`);
+        // Ensure level is set correctly
+        parsed.level = 1;
+        return this.initNodeWithColor(parsed, color, `b${idx}`);
       } catch {
-        // Fallback: simple local branch
-        const fallbackChildren = [
-          `${branchName} Overview`, `${branchName} Types`, `${branchName} Examples`, `${branchName} Best Practices`
-        ].map((childLabel, ci) => ({
-          id: `b${idx}_c${ci}`,
-          label: childLabel,
-          level: 2,
-          definition: `${childLabel} is a key aspect of ${branchName} within ${topic}.`,
-          children: [],
-          color,
-          expanded: false,
-          orderPath: `${idx + 1}.${ci + 1}`
-        }));
-        return {
-          id: `b${idx}`,
-          label: branchName,
-          level: 1,
-          definition: `${branchName} is a fundamental area of ${topic}.`,
-          children: fallbackChildren,
-          color,
-          expanded: false,
-          orderPath: `${idx + 1}`
-        };
+        // Fallback: 4-level local branch
+        return this.buildDeepLocalBranch(branchName, topic, idx, color);
       }
     };
 
@@ -1263,6 +1311,65 @@ Fill in 4 real children at level 2, each with 2-3 children at level 3. All label
       })
     };
   }
+
+  /**
+   * 4-level deep fallback branch when AI fails.
+   * Topic → Branch → Subtopic → Aspect → Detail
+   */
+  private buildDeepLocalBranch(branchName: string, topic: string, idx: number, color: string): any {
+    const subtopics = [
+      `${branchName} Fundamentals`,
+      `${branchName} Methods`,
+      `${branchName} Tools`,
+      `${branchName} Applications`
+    ];
+
+    return {
+      id: `b${idx}`,
+      label: branchName,
+      level: 1,
+      definition: `${branchName} is a fundamental area of ${topic} covering key concepts and practices.`,
+      color,
+      expanded: false,
+      orderPath: `${idx + 1}`,
+      children: subtopics.map((sub, si) => ({
+        id: `b${idx}_s${si}`,
+        label: sub,
+        level: 2,
+        definition: `${sub} covers the essential concepts within ${branchName}.`,
+        color,
+        expanded: false,
+        orderPath: `${idx + 1}.${si + 1}`,
+        children: [
+          `Core ${sub.split(' ')[0]} Concepts`,
+          `${sub.split(' ')[0]} Techniques`,
+          `${sub.split(' ')[0]} Examples`
+        ].map((aspect, ai) => ({
+          id: `b${idx}_s${si}_a${ai}`,
+          label: aspect,
+          level: 3,
+          definition: `${aspect} are important elements within ${sub}.`,
+          color,
+          expanded: false,
+          orderPath: `${idx + 1}.${si + 1}.${ai + 1}`,
+          children: [
+            `Key ${aspect.split(' ')[0]} Point`,
+            `${aspect.split(' ')[0]} Practice`
+          ].map((detail, di) => ({
+            id: `b${idx}_s${si}_a${ai}_d${di}`,
+            label: detail,
+            level: 4,
+            definition: `${detail} is a specific aspect of ${aspect} in ${topic}.`,
+            color,
+            expanded: false,
+            orderPath: `${idx + 1}.${si + 1}.${ai + 1}.${di + 1}`,
+            children: []
+          }))
+        }))
+      }))
+    };
+  }
+
 
   private extractLocalSections(content: string, fallbackTitle: string): { title: string; body: string }[] {
     const lines = content.split('\n').map(l => l.trim()).filter(Boolean);
@@ -1939,8 +2046,16 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
   hasChildren(node: MindNode): boolean { return node.children.length > 0; }
 
   getLevelLabel(level: number): string {
-    const labels: Record<number, string> = { 0: 'Root', 1: 'Branch', 2: 'Subtopic', 3: 'Detail', 4: 'Sub-detail', 5: 'Point' };
-    return labels[level] ?? `Level ${level}`;
+    const labels: Record<number, string> = {
+      0: 'Root',
+      1: 'Branch',
+      2: 'Subtopic',
+      3: 'Aspect',
+      4: 'Detail',
+      5: 'Sub-detail',
+      6: 'Point'
+    };
+    return labels[level] ?? `L${level}`;
   }
 
   getBreadcrumb(node: MindNode): string {
