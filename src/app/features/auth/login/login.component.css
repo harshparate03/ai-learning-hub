@@ -134,7 +134,8 @@
   justify-content: center;
   gap: 8px;
   background: var(--grad-btn);
-  color: white;
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
   border: none;
   border-radius: 11px;
   padding: 13px;
@@ -142,22 +143,23 @@
   font-weight: 600;
   cursor: pointer;
   letter-spacing: .01em;
-  position: relative;
-  overflow: hidden;
-  transition: transform .15s var(--ease-out), box-shadow .15s;
+  transition: filter .15s, transform .15s var(--ease-out), box-shadow .15s;
 }
 
 .auth-submit::after {
-  content: '';
-  position: absolute; inset: 0;
-  background: var(--grad-btn-hover);
-  opacity: 0;
-  transition: opacity .15s;
+  display: none; /* removed overlay — use filter:brightness instead */
 }
 
-.auth-submit:hover::after { opacity: 1; }
-.auth-submit:hover { transform: translateY(-1px); box-shadow: 0 8px 28px rgba(99,102,241,.38); }
-.auth-submit > * { position: relative; z-index: 1; }
+.auth-submit:hover::after { opacity: 0; }
+.auth-submit:hover {
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 28px rgba(99,102,241,.38);
+}
+.auth-submit:active { filter: brightness(0.95); transform: translateY(0); }
+.auth-submit > * { position: relative; }
 
 /* Divider */
 .auth-divider {

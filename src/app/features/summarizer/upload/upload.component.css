@@ -762,3 +762,5 @@
   .dropzone { padding: 28px 16px; }
   .qa-step { gap: 10px; }
 }
+/* btn-theme inside input-card — no extra overrides needed, global fix handles it */
+
