@@ -70,8 +70,29 @@ export class AiService {
       return this.http.post(this.GROQ_DIRECT_URL, body, { headers }).pipe(
         catchError(directErr => {
           const s = directErr?.status;
-          // On 401/429 rotate key and retry once
-          if ((s === 401 || s === 429) && this.API_KEYS.length > 1) {
+          // On 429: rotate key, wait 8s, then retry with new key
+          if (s === 429) {
+            this.rotateKey();
+            const retryHeaders = new HttpHeaders({
+              'Authorization': `Bearer ${this.API_KEY}`,
+              'Content-Type': 'application/json'
+            });
+            return timer(8000).pipe(
+              switchMap(() => this.http.post(this.GROQ_DIRECT_URL, body, { headers: retryHeaders }).pipe(
+                catchError(retryErr => {
+                  // If still 429 after retry, try proxy as last resort
+                  if (retryErr?.status === 429) {
+                    return timer(5000).pipe(
+                      switchMap(() => this.http.post(this.GROQ_PROXY_URL, body))
+                    );
+                  }
+                  return throwError(() => retryErr);
+                })
+              ))
+            );
+          }
+          // On 401: rotate key and retry once immediately
+          if (s === 401 && this.API_KEYS.length > 1) {
             this.rotateKey();
             const retryHeaders = new HttpHeaders({
               'Authorization': `Bearer ${this.API_KEY}`,
@@ -149,7 +170,7 @@ export class AiService {
       const fittedMessages = this.fitToContext(messages, model, safeOutput);
 
       return this.groqReq(model, fittedMessages, safeOutput).pipe(
-        timeout(60000),
+        timeout(90000),
         catchError(err => {
           const status = err?.status;
           lastErr = err;
@@ -157,7 +178,13 @@ export class AiService {
 
           if (status === 401 || status === 403 || status === 0) return throwError(() => err);
 
-          const wait$ = status === 429 ? timer(3000) : timer(300);
+          // 429: rotate key, wait longer, then try next model
+          if (status === 429) {
+            this.rotateKey();
+            return timer(12000).pipe(switchMap(() => tryModel(idx + 1)));
+          }
+
+          const wait$ = timer(500);
           return wait$.pipe(switchMap(() => tryModel(idx + 1)));
         })
       );

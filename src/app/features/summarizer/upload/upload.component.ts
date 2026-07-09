@@ -254,7 +254,8 @@ export class UploadComponent implements OnInit {
     this.detectedSubject = '';
 
     const content = this.cleanPdfText(this.mode === 'text' ? this.inputText : this.fileContent);
-    const chunks = this.chunkText(content, 4200);
+    // Use larger chunks to reduce number of API calls (fewer = less rate limiting)
+    const chunks = this.chunkText(content, 7000);
 
     this.extractPdfImages();
 
@@ -270,44 +271,82 @@ Output ONLY valid JSON, no markdown, no explanation:
 Rules:
 - Extract ALL topics from the content (minimum 3, maximum 8 per chunk)
 - Each topic needs at least 2-3 subtopics
-- Only include codes if actual code exists in content
-- image field: describe any diagram/figure mentioned, or empty string
-- titles should use **bold** for key terms in explanations and bullets
+- Only include codes array if actual code exists in content, otherwise use empty array []
+- image field: describe any diagram/figure mentioned, or empty string ""
+- Use **bold** for key terms in explanations and bullets
 
 CONTENT:
 ${chunks[i]}
 
-Output complete JSON array now:`;
+Output complete JSON now:`;
 
-        const res: any = await lastValueFrom(this.ai.generateWithGroq(prompt, 3072));
-        const text = res?.choices?.[0]?.message?.content || '';
-        this.chunkResults.push(text);
+        let text = '';
+        try {
+          const res: any = await lastValueFrom(this.ai.generateWithGroq(prompt, 2048));
+          text = res?.choices?.[0]?.message?.content || '';
+        } catch (chunkErr: any) {
+          const s = chunkErr?.status;
+          if (s === 429) {
+            // Rate limited — wait longer and retry once with smaller output
+            this.progress = `Rate limited — waiting 15s before retrying section ${i + 1}...`;
+            await new Promise(r => setTimeout(r, 15000));
+            try {
+              const retryRes: any = await lastValueFrom(this.ai.generateWithGroq(prompt, 1536));
+              text = retryRes?.choices?.[0]?.message?.content || '';
+            } catch {
+              // If still fails, use local fallback for this chunk
+              text = this.buildLocalChunkJson(chunks[i]);
+            }
+          } else {
+            throw chunkErr; // re-throw non-429 errors
+          }
+        }
 
+        if (text) this.chunkResults.push(text);
         this.parseTopics(this.chunkResults.join('\n\n'));
-        this.progress = `Section ${i + 1} of ${chunks.length} done - ${this.topics.length} topics found...`;
+        this.progress = `Section ${i + 1} of ${chunks.length} done — ${this.topics.length} topics found...`;
 
+        // Inter-chunk delay to avoid hitting rate limits on next call
         if (i < chunks.length - 1) {
-          await new Promise(r => setTimeout(r, 1000));
+          await new Promise(r => setTimeout(r, 3000));
         }
       }
 
       this.detectedSubject = this.topics.slice(0, 3).map(t => t.title.replace(/\*\*/g, '')).join(', ');
       this.progress = 'Generating Exam Q&A...';
 
-      const topicList = this.topics.map((t, i) => `${i + 1}. ${t.title.replace(/\*\*/g, '')}`).join('\n');
+      const topicList = this.topics.map((t, idx) => `${idx + 1}. ${t.title.replace(/\*\*/g, '')}`).join('\n');
 
       const qaPrompt = `Generate 8 exam questions as JSON. Output ONLY valid JSON:
 {"questions":[{"q":"Question text?","a":"Detailed answer introduction.","steps":["Step 1 explanation","Step 2 explanation","Step 3 explanation"],"image":""}]}
 
 Topics covered: ${topicList}
-Content: ${this.chunkResults.join('\n\n').slice(0, 6000)}
+Content: ${this.chunkResults.join('\n\n').slice(0, 5000)}
 
 Output JSON now:`;
 
-      const qaRes: any = await lastValueFrom(this.ai.generateWithGroq(qaPrompt, 2200));
-      const qaText = qaRes?.choices?.[0]?.message?.content || '';
-      this.parseQuestions(qaText);
+      let qaText = '';
+      try {
+        const qaRes: any = await lastValueFrom(this.ai.generateWithGroq(qaPrompt, 2048));
+        qaText = qaRes?.choices?.[0]?.message?.content || '';
+      } catch (qaErr: any) {
+        if (qaErr?.status === 429) {
+          // Rate limited on Q&A — wait and retry
+          this.progress = 'Rate limited — waiting 15s for Q&A generation...';
+          await new Promise(r => setTimeout(r, 15000));
+          try {
+            const retryQaRes: any = await lastValueFrom(this.ai.generateWithGroq(qaPrompt, 1536));
+            qaText = retryQaRes?.choices?.[0]?.message?.content || '';
+          } catch {
+            // Build basic Q&A from topics if AI fails
+            qaText = this.buildLocalQAJson();
+          }
+        } else {
+          qaText = this.buildLocalQAJson(); // fallback for any Q&A error
+        }
+      }
 
+      this.parseQuestions(qaText);
       this.progress = '';
       this.loading = false;
 
@@ -317,9 +356,9 @@ Output JSON now:`;
       if (status === 401 || status === 403) {
         this.errorMsg = 'API key is not valid. Please check the API key configuration.';
       } else if (status === 429) {
-        this.errorMsg = 'Rate limit reached. Please wait a moment and try again.';
+        this.errorMsg = 'Rate limit reached. Please wait 1-2 minutes and try again. Your API key has a usage limit per minute.';
       } else if (status === 503 || /all ai models failed/i.test(msg)) {
-        this.errorMsg = 'All AI models are currently unavailable. Please check your API key or try again later.';
+        this.errorMsg = 'AI service temporarily unavailable. Please try again in a moment.';
       } else if (status === 0 || !status) {
         this.errorMsg = 'Network error. Please check your internet connection and try again.';
       } else {
@@ -329,6 +368,35 @@ Output JSON now:`;
       this.loading = false;
     }
   }
+
+  /** Build a minimal JSON response from raw text when AI is unavailable */
+  private buildLocalChunkJson(chunk: string): string {
+    const lines = chunk.split('\n').filter(l => l.trim().length > 20).slice(0, 30);
+    const title = lines[0]?.trim().slice(0, 60) || 'Study Content';
+    const bullets = lines.slice(1, 6).map(l => l.trim().replace(/^[-*•]\s*/, ''));
+    return JSON.stringify({
+      topics: [{
+        title,
+        explanation: lines.slice(0, 3).join(' ').slice(0, 300),
+        subtopics: [],
+        bullets,
+        codes: [],
+        image: ''
+      }]
+    });
+  }
+
+  /** Build basic Q&A from existing topics when AI is unavailable */
+  private buildLocalQAJson(): string {
+    const questions = this.topics.slice(0, 6).map(t => ({
+      q: `What is ${t.title.replace(/\*\*/g, '')}?`,
+      a: t.explanation.replace(/\*\*/g, '').slice(0, 200),
+      steps: t.bullets.slice(0, 4).map(b => b.replace(/\*\*/g, '')),
+      image: ''
+    }));
+    return JSON.stringify({ questions });
+  }
+
 
   private buildLocalSummary(content: string) {
     const cleanContent = this.normalizeText(content);
