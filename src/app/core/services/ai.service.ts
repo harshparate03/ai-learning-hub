@@ -22,6 +22,7 @@ export class AiService {
 
   private readonly GROQ_DIRECT_URL = 'https://api.groq.com/openai/v1/chat/completions';
   private readonly GROQ_PROXY_URL  = '/api/groq';
+  private readonly ON_DEMAND_TOKEN_LIMIT = 7000; // keep total input + output below Groq on-demand TPM
 
   // Two API keys — primary and fallback
   private readonly API_KEYS: string[] = [
@@ -39,12 +40,11 @@ export class AiService {
     }
   }
 
-  // Only active, non-deprecated Groq models (verified 2025)
+  // Current Groq production models. Avoid preview IDs because they can disappear without notice.
   private readonly GROQ_MODELS: GroqModel[] = [
-    { id: 'llama-3.3-70b-versatile',  contextTokens: 128000, maxOutputTokens: 8192 },
-    { id: 'llama-3.1-8b-instant',     contextTokens: 128000, maxOutputTokens: 8192 },
-    { id: 'llama-3.2-3b-preview',     contextTokens: 8192,   maxOutputTokens: 4096 },
-    { id: 'llama-3.2-1b-preview',     contextTokens: 8192,   maxOutputTokens: 4096 },
+    { id: 'llama-3.3-70b-versatile', contextTokens: 131072, maxOutputTokens: 3072 },
+    { id: 'llama-3.1-8b-instant',    contextTokens: 131072, maxOutputTokens: 3072 },
+    { id: 'openai/gpt-oss-20b',      contextTokens: 131072, maxOutputTokens: 3072 },
   ];
 
   static readonly PROXY_ERROR =
@@ -96,7 +96,7 @@ export class AiService {
 
   // Trim messages so total input tokens fit within the model's context window
   private fitToContext(messages: GroqChatMessage[], model: GroqModel, maxOutputTokens: number): GroqChatMessage[] {
-    const budget = model.contextTokens - maxOutputTokens - 200; // 200 token safety margin
+    const budget = Math.max(500, Math.min(model.contextTokens - maxOutputTokens - 200, this.ON_DEMAND_TOKEN_LIMIT - maxOutputTokens));
     let total = 0;
     const result: GroqChatMessage[] = [];
 
@@ -115,12 +115,19 @@ export class AiService {
       }
     }
 
-    // Add non-system messages from newest to oldest, then reverse
+    // Add non-system messages from newest to oldest. Truncate the newest message if needed.
     const nonSystem = messages.filter(m => m.role !== 'system').reverse();
     const kept: GroqChatMessage[] = [];
     for (const m of nonSystem) {
+      const remaining = budget - total;
+      if (remaining <= 0) break;
       const t = this.charsToTokens(m.content.length);
-      if (total + t > budget) break;
+      if (t > remaining) {
+        if (!kept.length) {
+          kept.push({ ...m, content: m.content.slice(0, Math.max(1000, remaining * 4)) });
+        }
+        break;
+      }
       kept.push(m);
       total += t;
     }
@@ -128,12 +135,14 @@ export class AiService {
   }
 
   private groqWithAllModels(messages: GroqChatMessage[], maxOutputTokens = 4096): Observable<any> {
+    let lastErr: any = null;
+
     const tryModel = (idx: number): Observable<any> => {
       if (idx >= this.GROQ_MODELS.length) {
-        return throwError(() => ({
+        return throwError(() => lastErr || {
           status: 503,
           message: 'All AI models are currently unavailable. Please try again later.'
-        }));
+        });
       }
       const model = this.GROQ_MODELS[idx];
       const safeOutput = Math.min(maxOutputTokens, model.maxOutputTokens);
@@ -142,16 +151,12 @@ export class AiService {
       return this.groqReq(model, fittedMessages, safeOutput).pipe(
         timeout(60000),
         catchError(err => {
-          const status   = err?.status;
-          const groqMsg: string = err?.error?.error?.message || '';
-          console.warn('[Groq] Model failed, trying next...');
+          const status = err?.status;
+          lastErr = err;
+          console.warn(`[Groq] ${model.id} failed (${status || 'unknown'}), trying next model...`);
 
-          // Auth failure — stop immediately
-          if (status === 401 || status === 403) return throwError(() => err);
-          // Network error — stop immediately
-          if (status === 0) return throwError(() => err);
-          // Any 400 — try next model (could be deprecation, context limit, or model-specific issue)
-          // Everything else (429, 5xx, 400) — try next model
+          if (status === 401 || status === 403 || status === 0) return throwError(() => err);
+
           const wait$ = status === 429 ? timer(3000) : timer(300);
           return wait$.pipe(switchMap(() => tryModel(idx + 1)));
         })
@@ -160,8 +165,8 @@ export class AiService {
     return tryModel(0);
   }
 
-  generateWithGroq(prompt: string): Observable<any> {
-    return this.groqWithAllModels([{ role: 'user', content: sanitizeUserInput(prompt, 50000) }], 8192);
+  generateWithGroq(prompt: string, maxOutputTokens = 1536): Observable<any> {
+    return this.groqWithAllModels([{ role: 'user', content: sanitizeUserInput(prompt, 24000) }], maxOutputTokens);
   }
 
   chatWithGroq(messages: GroqChatMessage[], options?: { skipDefaultSystem?: boolean }): Observable<string> {
@@ -214,13 +219,15 @@ Use plain markdown only — no HTML.`
   }
 
   proxyErrorMessage(err: any): string {
-    const groqMsg: string = err?.error?.error?.message || '';
-    if (err?.status === 401 || err?.status === 403) return 'API key is invalid. Please check your Groq API key.';
-    if (err?.status === 429) return 'Rate limit reached. Please wait a moment and try again.';
-    if (err?.status === 408 || err?.name === 'TimeoutError') return 'Request timed out. Please try again.';
-    if (err?.status === 0) return 'Network error. Please check your internet connection.';
-    if (err?.status === 400) return 'Request was too large. Please try a shorter message.';
-    if (err?.status === 503) return 'All AI models are currently unavailable. Please try again later.';
-    return err?.message || 'AI request failed. Please try again.';
+    const groqMsg: string = err?.error?.error?.message || err?.error?.message || err?.message || '';
+    const status = err?.status ?? err?.error?.status;
+    if (status === 401 || status === 403) return 'API key is invalid or blocked. Please check your Groq API key.';
+    if (status === 429) return groqMsg || 'Groq rate limit reached. Please wait a moment and try again.';
+    if (status === 408 || err?.name === 'TimeoutError') return 'Request timed out. Please try again.';
+    if (status === 0) return 'Network error. Please check your internet connection.';
+    if (status === 400) return groqMsg || 'Request was too large or invalid. Please try a shorter video/context.';
+    if (status === 503) return groqMsg || 'AI service is temporarily unavailable. Please try again later.';
+    return groqMsg || 'AI request failed. Please try again.';
   }
 }
+

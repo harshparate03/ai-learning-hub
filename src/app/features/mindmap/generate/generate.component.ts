@@ -369,10 +369,96 @@ export class GenerateComponent implements OnInit {
   }
 
   private async generateFromFile() {
-    const content = this.fileContent;
+    const content = this.normalizeText(this.fileContent);
+    if (!content || content.length < 20) {
+      this.errorMsg = 'Could not extract enough readable text from this file.';
+      return;
+    }
+
+    this.sourceContent = content;
+    this.progress = 'Analyzing uploaded file...';
+
     await this.generateSingleCall(content, true);
+
+    if (this.rootNode && !this.errorMsg && this.isMindMapGroundedInContent(this.rootNode, content)) {
+      this.progress = 'Built mind map from uploaded file.';
+      return;
+    }
+
+    this.buildExactFileMindMap(content);
   }
 
+  private buildExactFileMindMap(content: string) {
+    const rawTree = this.buildExactDocumentTree(content);
+    if (!rawTree.children.length) {
+      this.errorMsg = 'Could not identify topics in this file. Try a clearer document with headings or paragraphs.';
+      return;
+    }
+
+    this.rootNode = this.sanitizeMindTree(this.initNode(rawTree, 0));
+    this.rootNode.expanded = true;
+    this.selectedNode = null;
+    this.errorMsg = '';
+    this.progress = 'Built mind map directly from uploaded file structure.';
+  }
+
+  private isMindMapGroundedInContent(root: MindNode, content: string): boolean {
+    const sourceTokens = new Set(this.getMeaningfulTokens(content));
+    if (sourceTokens.size < 8) return true;
+
+    const branches = (root.children || []).filter(branch => branch.label?.trim());
+    if (!branches.length) return false;
+
+    let groundedBranches = 0;
+    for (const branch of branches) {
+      if (this.isNodeGroundedInContent(branch, sourceTokens)) {
+        groundedBranches++;
+      }
+    }
+
+    return groundedBranches / branches.length >= 0.5;
+  }
+
+  private isNodeGroundedInContent(node: MindNode, sourceTokens: Set<string>): boolean {
+    const labelTokens = this.getMeaningfulTokens(node.label);
+    const childTokens = (node.children || [])
+      .flatMap(child => this.getMeaningfulTokens(child.label))
+      .slice(0, 20);
+
+    const nonGenericLabelTokens = labelTokens.filter(token => !this.isGenericMindMapToken(token));
+    const labelHits = nonGenericLabelTokens.filter(token => sourceTokens.has(token)).length;
+    const childHits = childTokens.filter(token => sourceTokens.has(token)).length;
+
+    if (nonGenericLabelTokens.length && labelHits >= Math.min(2, nonGenericLabelTokens.length)) return true;
+    return childHits >= 3;
+  }
+
+  private getMeaningfulTokens(text: string): string[] {
+    const stopWords = new Set([
+      'about', 'above', 'after', 'again', 'against', 'also', 'because', 'before', 'being', 'below',
+      'between', 'could', 'from', 'have', 'into', 'more', 'most', 'only', 'other', 'over',
+      'same', 'some', 'such', 'than', 'that', 'their', 'them', 'then', 'there', 'these',
+      'they', 'this', 'through', 'under', 'using', 'very', 'what', 'when', 'where', 'which',
+      'while', 'with', 'within', 'would', 'your'
+    ]);
+
+    return this.normalizeText(text)
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, ' ')
+      .split(/\s+/)
+      .map(token => token.trim())
+      .filter(token => token.length > 3 && !stopWords.has(token));
+  }
+
+  private isGenericMindMapToken(token: string): boolean {
+    return new Set([
+      'application', 'applications', 'benefit', 'benefits', 'challenge', 'challenges', 'component',
+      'components', 'concept', 'concepts', 'core', 'example', 'examples', 'feature', 'features',
+      'future', 'introduction', 'limitation', 'limitations', 'overview', 'practice', 'practices',
+      'process', 'summary', 'technique', 'techniques', 'technology', 'tools', 'topic', 'topics',
+      'type', 'types', 'workflow'
+    ]).has(token);
+  }
   private buildExactDocumentTree(content: string): any {
     const cleanContent = this.normalizeText(content);
     const rootLabel = this.inferTitle(cleanContent, this.fileName || 'Document Mind Map');
@@ -963,77 +1049,88 @@ Return ONLY valid JSON (no markdown, no code fences):
     this.sourceContent = content;
     this.progress = 'Building mind map...';
 
-    // Short topic = keyword(s) typed by user (e.g. "Software Testing", "Machine Learning")
     const isShortTopic = !isContentBased && content.trim().split(/\s+/).length <= 20;
 
-    const topicPrompt = `Create a JSON mind map for: "${content}"
-
-Output ONLY valid JSON starting with { — no markdown, no explanation.
-
-Rules:
-- 8 primary branches (level 1) covering: Types/Categories, Core Concepts, Key Techniques, Tools/Technologies, Process/Workflow, Benefits/Advantages, Challenges/Limitations, Best Practices
-- 4-5 children per branch (level 2), 2-3 children per level-2 node (level 3)
-- Labels: 2-4 words, domain keywords only, no numbering
-- Definitions: 2 sentences each — what it is and why it matters
-- Strict parent→child hierarchy
-
-JSON format:
-{"root":{"id":"root","label":"${content}","level":0,"definition":"What ${content} is and its core purpose.","children":[{"id":"b1","label":"Types","level":1,"definition":"The main categories within this topic.","children":[{"id":"b1a","label":"Example Type","level":2,"definition":"What this type is and when it is used.","children":[{"id":"b1a1","label":"Specific Detail","level":3,"definition":"A specific aspect of this type.","children":[]}]}]}]}}
-
-Now generate the complete 8-branch map with real content for "${content}". Return complete JSON only.`;
-
-    const contentPrompt = `You are an expert Visual Knowledge Architect and Information Structuring Expert.
-
-Analyze the content below and build a mind map that STRICTLY follows what is written in it.
+    // ── CONTENT-BASED (file upload or long text) ────────────────────────────
+    if (!isShortTopic) {
+      const contentPrompt = `Analyze this content and extract a mind map. Output ONLY valid JSON starting with {.
 
 CONTENT:
 ${content.slice(0, 12000)}
 
-STRICT RULES:
-- Root label = the main topic/title found in the content
-- Primary branches = actual main sections, themes, or major headings FROM THE CONTENT
-- All labels must use exact terms, headings, or concepts from the content
-- All definitions must use ONLY information from the content — no external knowledge added
-- DO NOT invent topics not in the content
-- Labels: 2-4 words maximum, use exact terminology from the content
-- Definitions: 3-5 sentences using only information from the content above
-- Structure: at least 6 primary branches, each with 3-6 secondary branches
-- Maintain parent-child logic: children must be sub-topics of their parent
+Rules:
+- root label = main title/topic found in the content
+- 6-8 branches = actual sections/themes FROM this content (no invented topics)
+- Labels: exact terms from content, 2-4 words
+- Definitions: 2-3 sentences using ONLY information from this content
+- 4-5 level-2 children per branch, 2-3 level-3 children per level-2
 
-Return ONLY valid JSON (no markdown, no code fences):
-{
-  "root": {
-    "id": "root",
-    "label": "Main Topic from Content",
-    "level": 0,
-    "definition": "3-5 sentence overview based on the content.",
-    "children": [
-      {
-        "id": "b1",
-        "label": "Section from Content",
-        "level": 1,
-        "definition": "3-5 sentences directly from the content.",
-        "children": [
-          {
-            "id": "b1a",
-            "label": "Subsection from Content",
-            "level": 2,
-            "definition": "3-5 sentences from the content.",
-            "children": [
-              { "id": "b1a1", "label": "Detail from Content", "level": 3, "definition": "3-5 sentences.", "children": [] }
-            ]
-          }
-        ]
+{"root":{"id":"root","label":"Title","level":0,"definition":"overview.","children":[{"id":"b1","label":"Section","level":1,"definition":"what this section covers.","children":[{"id":"b1a","label":"Subtopic","level":2,"definition":"details.","children":[{"id":"b1a1","label":"Detail","level":3,"definition":"specific point.","children":[]}]}]}]}}`;
+
+      let res: any;
+      try {
+        res = await this.ai.generateWithGroq(contentPrompt).toPromise();
+      } catch {
+        this.buildLocalMindMap(content, isContentBased);
+        return;
       }
-    ]
-  }
-}`;
+      const text = this.extractTextFromResponse(res);
+      if (!text || this.ai.isDemoFallback(text)) {
+        this.buildLocalMindMap(content, isContentBased);
+        return;
+      }
+      this.parseRoot(text);
+      if (!this.rootNode || this.errorMsg) {
+        this.buildLocalMindMap(content, isContentBased);
+      }
+      return;
+    }
 
-    const prompt = isShortTopic ? topicPrompt : contentPrompt;
+    // ── SHORT TOPIC — 2-step approach ───────────────────────────────────────
+    // Step 1: Get 8 domain-specific branch names for this exact topic
+    this.progress = 'Analyzing topic...';
+    let branchNames: string[] = [];
+    try {
+      const branchRes: any = await this.ai.generateWithGroq(
+        `List exactly 8 main topic areas/branches for a comprehensive mind map about "${content}". These must be the ACTUAL key areas of "${content}" — not generic ones.
+For example:
+- "Software Testing" → Unit Testing, Integration Testing, Test Automation, Bug Tracking, Test Design, QA Process, Testing Tools, Performance Testing
+- "Machine Learning" → Supervised Learning, Unsupervised Learning, Neural Networks, Feature Engineering, Model Evaluation, Algorithms, Deep Learning, Real-world Applications
+
+Now list 8 specific branches for "${content}". One per line, no numbering, no explanation.`
+      ).toPromise();
+      const branchText = this.extractTextFromResponse(branchRes) || '';
+      branchNames = branchText
+        .split('\n')
+        .map(l => l.replace(/^[-*•\d.)\s]+/, '').trim())
+        .filter(l => l.length > 2 && l.length < 50)
+        .slice(0, 8);
+    } catch {
+      // fallback branch names
+    }
+
+    // Ensure we have exactly 8 branches
+    if (branchNames.length < 4) {
+      branchNames = ['Core Concepts', 'Types & Categories', 'Key Techniques', 'Tools & Technologies',
+                     'Process & Workflow', 'Benefits', 'Challenges', 'Best Practices'];
+    }
+
+    // Step 2: Build full tree using the domain-specific branch names
+    this.progress = 'Building mind map...';
+
+    const branchSchema = branchNames.map((name, i) =>
+      `{"id":"b${i+1}","label":"${name}","level":1,"definition":"2-sentence explanation of ${name} in context of ${content}.","children":[{"id":"b${i+1}a","label":"specific subtopic","level":2,"definition":"1-2 sentences.","children":[{"id":"b${i+1}a1","label":"detail","level":3,"definition":"1 sentence.","children":[]}]}]}`
+    ).join(',\n');
+
+    const topicPrompt = `Create a complete mind map JSON for "${content}" using these 8 branches. Output ONLY valid JSON starting with {.
+
+Fill in ALL children properly. Each branch needs 4-5 level-2 children, each with 2-3 level-3 children. Labels 2-4 words, definitions 1-2 sentences per node.
+
+{"root":{"id":"root","label":"${content}","level":0,"definition":"${content} is [define it in 2 sentences].","children":[${branchSchema}]}}`;
 
     let res: any;
     try {
-      res = await this.ai.generateWithGroq(prompt).toPromise();
+      res = await this.ai.generateWithGroq(topicPrompt).toPromise();
     } catch {
       this.buildLocalMindMap(content, isContentBased);
       return;
@@ -1996,6 +2093,11 @@ Rules: Based ONLY on source content. Use markdown pipe table for any tabular dat
 
     this.progress = 'Building mind map...';
 
+    if (videoMeta.chapters.length > 0) {
+      this.buildLocalYoutubeMindMap(videoMeta, context);
+      return;
+    }
+
     const prompt = context && context.trim().length > 50
       ? `You are an expert Visual Knowledge Architect, Mind Mapping Specialist, and Learning Designer.
 
@@ -2113,13 +2215,10 @@ Return ONLY valid JSON (no markdown, no code fences):
 
   private buildLocalYoutubeMindMap(videoMeta: VideoMeta, context: string) {
     const title = videoMeta.title || 'YouTube Video';
-    const chapterText = videoMeta.chapters.map(c => `${c.title}. ${c.time}`).join('\n');
+    const chapterText = videoMeta.chapters.map(c => `${c.time} ${c.title}`).join('\n');
     const tagText = videoMeta.tags.join('\n');
     const source = [context, videoMeta.description, chapterText, tagText].filter(Boolean).join('\n\n');
     this.sourceContent = source;
-    const sectionSeed = videoMeta.chapters.length
-      ? videoMeta.chapters.map(c => ({ title: c.title, body: source }))
-      : this.extractLocalSections(source || title, title);
 
     const root = {
       id: 'root',
@@ -2127,29 +2226,101 @@ Return ONLY valid JSON (no markdown, no code fences):
       level: 0,
       definition: [
         videoMeta.channel ? `This video is from ${videoMeta.channel}.` : '',
-        videoMeta.description ? videoMeta.description.slice(0, 350) : `This mind map is built from the available metadata for "${title}".`
+        videoMeta.description ? videoMeta.description.slice(0, 350) : `This mind map is built from the available metadata for "${title}".`,
+        videoMeta.chapters.length ? `It includes ${videoMeta.chapters.length} detected chapters from the video timeline.` : ''
       ].filter(Boolean).join(' '),
-      children: sectionSeed.slice(0, 7).map((section, i) =>
-        this.buildLocalBranch(section.title, section.body || source || title, 1, i)
-      )
+      children: videoMeta.chapters.length
+        ? videoMeta.chapters.map((chapter, i) => this.buildYoutubeChapterBranch(chapter, videoMeta, i))
+        : this.extractLocalSections(source || title, title).slice(0, 10).map((section, i) =>
+            this.buildLocalBranch(section.title, section.body || source || title, 1, i)
+          )
     };
 
-    this.rootNode = this.initNode(root, 0);
+    this.rootNode = this.sanitizeMindTree(this.initNode(root, 0));
     this.rootNode.expanded = true;
     this.errorMsg = '';
-    this.progress = 'Built YouTube mind map from available video metadata.';
+    this.progress = videoMeta.chapters.length
+      ? `Built YouTube mind map from all ${videoMeta.chapters.length} chapters.`
+      : 'Built YouTube mind map from available video metadata.';
+  }
+
+  private buildYoutubeChapterBranch(
+    chapter: { time: string; title: string },
+    videoMeta: VideoMeta,
+    index: number
+  ): any {
+    const label = this.cleanLocalLabel(chapter.title);
+    const concepts = this.extractChapterConcepts(label);
+    const definition = [
+      `Starts at ${chapter.time}.`,
+      `This chapter covers ${label} in "${videoMeta.title || 'the video'}".`,
+      videoMeta.channel ? `It is presented by ${videoMeta.channel}.` : ''
+    ].filter(Boolean).join(' ');
+
+    return {
+      id: `yt_chapter_${index + 1}`,
+      label,
+      level: 1,
+      definition,
+      children: concepts.map((concept, i) => ({
+        id: `yt_chapter_${index + 1}_${i + 1}`,
+        label: concept,
+        level: 2,
+        definition: `${concept} is a key point inside the "${label}" chapter. Use the timestamp ${chapter.time} to review this part in the video.`,
+        children: []
+      }))
+    };
+  }
+
+  private extractChapterConcepts(title: string): string[] {
+    const clean = this.cleanLocalLabel(title)
+      .replace(/\b(?:in|with|and|or|the|a|an|our|using|more|on)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const parts = clean
+      .split(/\s*[&/,+:()-]+\s*|\s+and\s+/i)
+      .map(part => this.cleanLocalLabel(part))
+      .filter(part => part.length >= 3 && part.toLowerCase() !== clean.toLowerCase());
+
+    const concepts = this.uniqueLabels(parts).slice(0, 4);
+    if (concepts.length) return concepts;
+
+    const words = clean.split(/\s+/).filter(word => word.length > 3).slice(0, 4);
+    return words.length ? words.map(word => this.toTitleCase(word)) : ['Overview'];
   }
 
   /** Extract chapters as structured list from description text */
   private extractChaptersList(description: string): { time: string; title: string }[] {
     const chapters: { time: string; title: string }[] = [];
-    const lines = description.split('\n');
-    for (const line of lines) {
-      const match = line.match(/(\d{1,2}:\d{2}(?::\d{2})?)\s*[-–—]?\s*(.+)/);
-      if (match && match[2].trim().length > 1) {
-        chapters.push({ time: match[1], title: match[2].trim() });
+    const lines = description.split('\n').map(line => line.trim()).filter(Boolean);
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const sameLine = line.match(/^(\d{1,2}:\d{2}(?::\d{2})?)(.*)$/);
+      const sameLineTitle = sameLine?.[2]
+        ?.replace(/^\s*(?:[-|:\u2013\u2014]\s*)?/, '')
+        .trim();
+      if (sameLine?.[1] && sameLineTitle) {
+        chapters.push({ time: sameLine[1], title: sameLineTitle });
+        continue;
+      }
+
+      const timeOnly = line.match(/^(\d{1,2}:\d{2}(?::\d{2})?)$/);
+      const nextTitle = lines[i + 1];
+      if (timeOnly?.[1] && nextTitle && !/^\d{1,2}:\d{2}(?::\d{2})?$/.test(nextTitle)) {
+        chapters.push({ time: timeOnly[1], title: nextTitle.trim() });
+        i++;
       }
     }
-    return chapters;
+
+    const seen = new Set<string>();
+    return chapters.filter(chapter => {
+      const key = `${chapter.time}|${chapter.title.toLowerCase()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
 }
+
+

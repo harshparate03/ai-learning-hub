@@ -93,8 +93,10 @@ export class YoutubeService {
 
   private readonly SEARCH_URL = '/api/youtube-search';
   private readonly VIDEO_URL  = '/api/youtube-details';
+  private readonly DIRECT_SEARCH_URL = 'https://www.googleapis.com/youtube/v3/search';
+  private readonly DIRECT_VIDEO_URL  = 'https://www.googleapis.com/youtube/v3/videos';
   private readonly OEMBED_URL = 'https://www.youtube.com/oembed';
-  private readonly GROQ_URL   = '/groq/openai/v1/chat/completions';
+  private readonly GROQ_URL   = 'https://api.groq.com/openai/v1/chat/completions';
   private readonly GROQ_KEY   = environment.groqApiKey || '';
 
   constructor(private http: HttpClient) {}
@@ -107,7 +109,17 @@ export class YoutubeService {
     if (!q) return [];
 
     const topicMap: Record<string, string[]> = {
+      bu: ['bubble sort', 'bubble sort algorithm', 'bubble sort in data structures', 'bubble sort gate smashers'],
+      bub: ['bubble sort', 'bubble sort algorithm', 'bubble sort dry run', 'bubble sort time complexity'],
+      bubble: ['bubble sort', 'bubble sort algorithm', 'bubble sort in c', 'bubble sort in java'],
+      bi: ['binary search', 'binary tree', 'binary search tree', 'big o notation'],
+      bin: ['binary search', 'binary search algorithm', 'binary search tree', 'binary tree traversal'],
+      da: ['data structures', 'data science', 'database SQL', 'data analysis'],
       data: ['data structures', 'data science', 'database SQL', 'data analysis'],
+      ds: ['data structures', 'data structures and algorithms', 'dsa full course', 'dsa placement preparation'],
+      dsa: ['dsa tutorial', 'dsa full course', 'dsa gatesmashers', 'dsa placement preparation'],
+      gate: ['gate computer science', 'gate cse data structures', 'gate smashers dsa', 'gate smashers operating system'],
+      gatesmashers: ['gatesmashers dsa', 'gatesmashers operating system', 'gatesmashers dbms', 'gatesmashers computer networks'],
       machine: ['machine learning', 'machine learning algorithms', 'machine learning python'],
       python: ['python programming', 'python for beginners', 'python data science'],
       java: ['java programming', 'java OOP', 'java data structures'],
@@ -124,53 +136,116 @@ export class YoutubeService {
       sql: ['SQL tutorial', 'database SQL', 'MySQL for beginners'],
       js: ['javascript tutorial', 'javascript full course'],
       node: ['node.js tutorial', 'express.js tutorial'],
+      os: ['operating system', 'operating system gate smashers', 'operating system full course'],
+      dbms: ['dbms tutorial', 'dbms gate smashers', 'database management system'],
     };
 
-    const suggestions = new Set<string>();
+    const learningTopics = [
+      'bubble sort', 'selection sort', 'insertion sort', 'merge sort', 'quick sort', 'heap sort',
+      'linear search', 'binary search', 'time complexity', 'space complexity', 'big o notation',
+      'arrays in data structures', 'linked list', 'stack data structure', 'queue data structure',
+      'tree data structure', 'binary tree', 'binary search tree', 'graph data structure',
+      'hashing in data structures', 'recursion', 'dynamic programming', 'greedy algorithm',
+      'data structures and algorithms', 'dsa full course', 'dsa tutorial', 'dsa gatesmashers',
+      'gate smashers dsa', 'gate computer science', 'operating system', 'dbms', 'computer networks',
+      'compiler design', 'theory of computation', 'software engineering', 'computer organization',
+      'python programming', 'java programming', 'javascript tutorial', 'machine learning',
+      'web development', 'software testing', 'sql tutorial', 'react tutorial', 'angular tutorial'
+    ];
+
+    const channelTopics = [
+      'gate smashers dsa', 'gate smashers operating system', 'gate smashers dbms',
+      'neso academy data structures', 'knowledge gate data structures', 'abdul bari algorithms',
+      'take u forward dsa', 'striver dsa sheet', 'apna college dsa', 'codewithharry python'
+    ];
+
+    const suggestions = new Map<string, number>();
+    const words = q.split(/\s+/).filter(Boolean);
+    const add = (value: string, score: number) => {
+      const clean = value.toLowerCase().replace(/\s+/g, ' ').trim();
+      if (!clean || clean === q) return;
+      suggestions.set(clean, Math.max(score, suggestions.get(clean) || 0));
+    };
+
+    const matchesQuery = (candidate: string): boolean => {
+      const c = candidate.toLowerCase();
+      if (c.startsWith(q)) return true;
+      const candidateWords = c.split(/\s+/);
+      return words.every(word =>
+        word.length > 1 && candidateWords.some(candidateWord => candidateWord.startsWith(word))
+      );
+    };
 
     for (const [key, values] of Object.entries(topicMap)) {
-      if (q.startsWith(key) || key.startsWith(q) || key.includes(q)) {
-        values.forEach(v => suggestions.add(v));
+      if (key.startsWith(q) || q.startsWith(key) || words.some(w => key.startsWith(w))) {
+        values.forEach(v => add(v, 110));
       }
     }
 
-    for (const values of Object.values(topicMap)) {
-      for (const topic of values) {
-        const t = topic.toLowerCase();
-        if (t.includes(q) || q.split(' ').every(w => w.length > 1 && t.includes(w))) {
-          suggestions.add(topic);
-        }
+    for (const topic of learningTopics) {
+      if (matchesQuery(topic)) add(topic, topic.startsWith(q) ? 100 : 85);
+    }
+
+    for (const topic of channelTopics) {
+      if (matchesQuery(topic) || words.some(w => topic.includes(w) && w.length >= 3)) {
+        add(topic, 78);
       }
     }
 
     for (const video of CURATED_VIDEOS) {
-      const haystack = `${video.title} ${video.tags.join(' ')}`.toLowerCase();
-      if (haystack.includes(q)) {
-        suggestions.add(video.title.length > 48 ? `${video.tags[0]} tutorial` : video.title);
+      const title = video.title.toLowerCase();
+      const tags = video.tags.join(' ').toLowerCase();
+      if (matchesQuery(title) || matchesQuery(tags)) {
+        add(video.title.length > 58 ? `${video.tags[0]} tutorial` : video.title, 65);
       }
       for (const tag of video.tags) {
-        if (tag.startsWith(q) || (q.length >= 2 && tag.includes(q))) {
-          suggestions.add(tag.includes(' ') ? tag : `${tag} tutorial`);
+        if (matchesQuery(tag)) {
+          add(tag.includes(' ') ? tag : `${tag} tutorial`, 60);
         }
       }
     }
 
-    return Array.from(suggestions)
-      .filter(s => s.toLowerCase() !== q)
+    if (q.length >= 4 && suggestions.size < 5) {
+      add(`${q} tutorial`, 35);
+      add(`${q} full course`, 32);
+      add(`${q} lecture`, 30);
+      add(`${q} playlist`, 28);
+      add(`${q} for beginners`, 25);
+    }
+
+    return Array.from(suggestions.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([value]) => value)
       .slice(0, 8);
   }
 
   searchVideos(query: string): Observable<any> {
     const safeQuery = sanitizeUserInput(query, 200);
-    // Try proxy/API — fallback to curated if it fails
     return this.http.get(this.SEARCH_URL, {
       params: { q: safeQuery, type: 'video', maxResults: '12' }
     }).pipe(
+      catchError(() => this.searchVideosDirect(safeQuery)),
       catchError(() => {
         console.warn('[YouTube] API unavailable, using curated fallback');
         return this.searchWithAIFallback(safeQuery);
       })
     );
+  }
+
+  private searchVideosDirect(query: string): Observable<any> {
+    if (!this.KEY) throw new Error('YouTube API key missing');
+    return this.http.get(this.DIRECT_SEARCH_URL, {
+      params: {
+        part: 'snippet',
+        q: query,
+        key: this.KEY,
+        maxResults: '12',
+        type: 'video',
+        videoEmbeddable: 'true',
+        order: 'relevance',
+        relevanceLanguage: 'en'
+      }
+    });
   }
 
   /**
@@ -299,11 +374,22 @@ Return ONLY a JSON array â€” no markdown, no explanation:
   }
 
   getVideoDetails(videoId: string): Observable<any> {
-    return this.http.get(this.VIDEO_URL, {
-      params: { id: videoId, part: 'snippet,statistics,contentDetails' }
-    }).pipe(
+    const params = { id: videoId, part: 'snippet,statistics,contentDetails' };
+    return this.http.get(this.VIDEO_URL, { params }).pipe(
+      catchError(() => this.getVideoDetailsDirect(videoId)),
       catchError(() => of({ items: [] }))
     );
+  }
+
+  private getVideoDetailsDirect(videoId: string): Observable<any> {
+    if (!this.KEY) throw new Error('YouTube API key missing');
+    return this.http.get(this.DIRECT_VIDEO_URL, {
+      params: {
+        id: videoId,
+        part: 'snippet,statistics,contentDetails',
+        key: this.KEY
+      }
+    });
   }
 
   getOEmbed(videoId: string): Observable<any> {
@@ -357,12 +443,43 @@ DESCRIPTION:\n${descClean}`);
   }
 
   getVideoId(url: string): string | null {
-    const patterns = [
-      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
-      /youtube\.com\/shorts\/([^&\n?#]+)/
-    ];
-    for (const p of patterns) { const m = url.match(p); if (m) return m[1]; }
-    return null;
+    const input = sanitizeUserInput(url, 500).trim();
+    if (!input) return null;
+
+    const validId = (value: string | null | undefined): string | null => {
+      const id = (value || '').trim();
+      return /^[a-zA-Z0-9_-]{11}$/.test(id) ? id : null;
+    };
+
+    const directId = validId(input);
+    if (directId) return directId;
+
+    const normalized = /^https?:\/\//i.test(input) ? input : `https://${input}`;
+
+    try {
+      const parsed = new URL(normalized);
+      const host = parsed.hostname.replace(/^www\./i, '').replace(/^m\./i, '').toLowerCase();
+      const pathParts = parsed.pathname.split('/').filter(Boolean);
+
+      if (host === 'youtu.be') {
+        return validId(pathParts[0]);
+      }
+
+      if (host === 'youtube.com' || host === 'music.youtube.com' || host === 'youtube-nocookie.com') {
+        const queryId = validId(parsed.searchParams.get('v'));
+        if (queryId) return queryId;
+
+        const idRoutes = new Set(['embed', 'shorts', 'live', 'v', 'e']);
+        if (pathParts.length >= 2 && idRoutes.has(pathParts[0])) {
+          return validId(pathParts[1]);
+        }
+      }
+    } catch {
+      // Fall through to regex extraction for pasted text that is not a clean URL.
+    }
+
+    const fallback = input.match(/(?:v=|youtu\.be\/|\/embed\/|\/shorts\/|\/live\/|\/v\/|\/e\/)([a-zA-Z0-9_-]{11})/);
+    return validId(fallback?.[1]);
   }
 
   getThumbnail(videoId: string): string {
