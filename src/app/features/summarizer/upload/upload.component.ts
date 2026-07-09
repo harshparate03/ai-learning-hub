@@ -4,6 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { lastValueFrom } from 'rxjs';
 import { AiService } from '../../../core/services/ai.service';
 import * as pdfjsLib from 'pdfjs-dist';
+import * as mammoth from 'mammoth';
+import JSZip from 'jszip';
 import {
   Document, Packer, Paragraph, TextRun, HeadingLevel,
   AlignmentType, BorderStyle, ShadingType, TableCell, TableRow, Table,
@@ -132,14 +134,36 @@ export class UploadComponent implements OnInit {
         const page = await pdf.getPage(i);
         const content = await page.getTextContent();
         if (text) text += '\n\n';
-        text += content.items.map((item: any) => item.str).join(' ') + '\n';
+        text += this.extractPdfPageText(content.items as any[]) + '\n';
       }
       this.fileContent = this.cleanPdfText(text);
       this.progress = '';
     }
 
-    if (ext === 'docx' || ext === 'pptx' || ext === 'ppt') {
-      this.fileContent = `[${file.name}] uploaded.`;
+    if (ext === 'docx') {
+      const buf = await file.arrayBuffer();
+      const result = await (mammoth as any).extractRawText({ arrayBuffer: buf });
+      this.fileContent = result.value || '';
+      this.progress = '';
+    }
+
+    if (ext === 'pptx' || ext === 'ppt') {
+      const buf = await file.arrayBuffer();
+      const zip = await (JSZip as any).loadAsync(buf);
+      const slideFiles = Object.keys(zip.files)
+        .filter((name: string) => name.match(/^ppt\/slides\/slide\d+\.xml$/))
+        .sort();
+      let text = '';
+      for (const sf of slideFiles) {
+        const xml = await zip.files[sf].async('string');
+        const textMatches = xml.match(/<a:t[^>]*>([^<]*)<\/a:t>/g) || [];
+        const slideText = textMatches
+          .map((m: string) => m.replace(/<[^>]+>/g, '').trim())
+          .filter((t: string) => t.length > 0)
+          .join(' ');
+        if (slideText) text += slideText + '\n\n';
+      }
+      this.fileContent = text;
       this.progress = '';
     }
   }
@@ -166,6 +190,33 @@ export class UploadComponent implements OnInit {
     return chunks.length ? chunks : [text];
   }
 
+
+  private extractPdfPageText(items: any[]): string {
+    const positioned = (items || [])
+      .map(item => ({
+        text: String(item.str || '').trim(),
+        x: Number(item.transform?.[4] || 0),
+        y: Number(item.transform?.[5] || 0)
+      }))
+      .filter(item => item.text);
+
+    positioned.sort((a, b) => Math.abs(b.y - a.y) > 2 ? b.y - a.y : a.x - b.x);
+
+    const lines: { y: number; parts: { x: number; text: string }[] }[] = [];
+    for (const item of positioned) {
+      const line = lines.find(l => Math.abs(l.y - item.y) <= 2);
+      if (line) {
+        line.parts.push({ x: item.x, text: item.text });
+      } else {
+        lines.push({ y: item.y, parts: [{ x: item.x, text: item.text }] });
+      }
+    }
+
+    return lines
+      .map(line => line.parts.sort((a, b) => a.x - b.x).map(part => part.text).join(' ').replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .join('\n');
+  }
   async extractPdfImages() {
     if (!this.pdfArrayBuffer) return;
     try {
@@ -203,91 +254,57 @@ export class UploadComponent implements OnInit {
     this.detectedSubject = '';
 
     const content = this.cleanPdfText(this.mode === 'text' ? this.inputText : this.fileContent);
-    const chunks = this.chunkText(content, 6000);
+    const chunks = this.chunkText(content, 4200);
 
     this.extractPdfImages();
 
     try {
       for (let i = 0; i < chunks.length; i++) {
-        this.progress = `📄 Processing section ${i + 1} of ${chunks.length}...`;
+        this.progress = `Processing section ${i + 1} of ${chunks.length}...`;
 
-        const prompt = `You are an expert academic content creator. Extract EVERY topic and subtopic from this section with full detail.
+        const prompt = `You are an expert academic note-taker. Analyze the content and extract comprehensive study notes as JSON.
 
-For EACH main topic use this EXACT format:
+Output ONLY valid JSON, no markdown, no explanation:
+{"topics":[{"title":"Topic Title","explanation":"4-6 sentence explanation with key concepts.","subtopics":[{"title":"Subtopic","explanation":"3-4 sentence explanation.","bullets":["key point 1","key point 2","key point 3"]}],"bullets":["important point 1","important point 2"],"codes":[{"lang":"language","code":"code here"}],"image":"diagram description or empty string"}]}
 
-##TOPIC## **Main Topic Title**
-##EXPLANATION## Brief 2-3 sentence overview with **bold** key terms.
-##SUBTOPICS##
-###SUB### **Subtopic Title**
-###SUBEXP### Full detailed explanation with **bold** key terms.
-###SUBBULLETS###
-- **Term**: detailed explanation
-- **Term**: detailed explanation
-- **Term**: detailed explanation
-###SUBEND###
-##ENDSUB##
-##BULLETS##
-- **Key Term**: explanation
-- **Key Term**: explanation
-##CODE## language
-code here
-##ENDCODE##
-##IMAGE## If this topic has any diagram, flowchart, figure, table, or visual — describe it in detail. If none, write NONE.
-##END##
-
-STRICT Rules:
-- Extract ALL topics and ALL subtopics - do NOT skip anything
-- ALL topic and subtopic titles MUST be wrapped in **bold**
-- Bullets must be **Term**: explanation format
-- ONLY add ##CODE## if ACTUAL CODE exists in content
-- Be thorough and complete
+Rules:
+- Extract ALL topics from the content (minimum 3, maximum 8 per chunk)
+- Each topic needs at least 2-3 subtopics
+- Only include codes if actual code exists in content
+- image field: describe any diagram/figure mentioned, or empty string
+- titles should use **bold** for key terms in explanations and bullets
 
 CONTENT:
-${chunks[i]}`;
+${chunks[i]}
 
-        const res: any = await lastValueFrom(this.ai.generateWithGroq(prompt));
+Output complete JSON array now:`;
+
+        const res: any = await lastValueFrom(this.ai.generateWithGroq(prompt, 3072));
         const text = res?.choices?.[0]?.message?.content || '';
         this.chunkResults.push(text);
 
         this.parseTopics(this.chunkResults.join('\n\n'));
-        this.progress = `✅ Section ${i + 1} of ${chunks.length} done — ${this.topics.length} topics found...`;
+        this.progress = `Section ${i + 1} of ${chunks.length} done - ${this.topics.length} topics found...`;
 
         if (i < chunks.length - 1) {
-          await new Promise(r => setTimeout(r, 3000));
+          await new Promise(r => setTimeout(r, 1000));
         }
       }
 
       this.detectedSubject = this.topics.slice(0, 3).map(t => t.title.replace(/\*\*/g, '')).join(', ');
-      this.progress = '🧠 Generating Exam Q&A...';
+      this.progress = 'Generating Exam Q&A...';
 
       const topicList = this.topics.map((t, i) => `${i + 1}. ${t.title.replace(/\*\*/g, '')}`).join('\n');
 
-      const qaPrompt = `You are an expert exam preparation specialist.
+      const qaPrompt = `Generate 8 exam questions as JSON. Output ONLY valid JSON:
+{"questions":[{"q":"Question text?","a":"Detailed answer introduction.","steps":["Step 1 explanation","Step 2 explanation","Step 3 explanation"],"image":""}]}
 
-Document is about: ${this.detectedSubject}
+Topics covered: ${topicList}
+Content: ${this.chunkResults.join('\n\n').slice(0, 6000)}
 
-Topics:
-${topicList}
+Output JSON now:`;
 
-Generate 10 exam questions based on these topics. Start DIRECTLY with ##Q##. No intro text.
-
-EXACT FORMAT:
-
-##Q## **Question title here?**
-##A## Detailed introduction with **bold** key terms. 3-4 sentences minimum.
-##STEPS##
-- **Point 1 Title**: Full detailed explanation with example
-- **Point 2 Title**: Full detailed explanation with example
-- **Point 3 Title**: Full detailed explanation with example
-- **Point 4 Title**: Full detailed explanation with example
-- **Point 5 Title**: Full detailed explanation with example
-##QIMAGE## NONE
-##QEND##
-
-CONTENT:
-${this.chunkResults.join('\n\n').slice(0, 8000)}`;
-
-      const qaRes: any = await lastValueFrom(this.ai.generateWithGroq(qaPrompt));
+      const qaRes: any = await lastValueFrom(this.ai.generateWithGroq(qaPrompt, 2200));
       const qaText = qaRes?.choices?.[0]?.message?.content || '';
       this.parseQuestions(qaText);
 
@@ -468,10 +485,65 @@ ${this.chunkResults.join('\n\n').slice(0, 8000)}`;
   private normalizeText(text: string): string {
     return (text || '').replace(/\r/g, '').replace(/[ \t]{2,}/g, ' ').trim();
   }
+  private normalizeSummaryMarkers(text: string): string {
+    return (text || '')
+      .replace(/\r/g, '')
+      .replace(/(^|\n)\s*(#{0,2}TOPIC##)/gi, '$1##TOPIC##')
+      .replace(/(^|\n)\s*(#{0,2}EXPLANATION##)/gi, '$1##EXPLANATION##')
+      .replace(/(^|\n)\s*(#{0,2}SUBTOPICS##)/gi, '$1##SUBTOPICS##')
+      .replace(/(^|\n)\s*(#{0,2}BULLETS##)/gi, '$1##BULLETS##')
+      .replace(/(^|\n)\s*(#{0,2}CODE##)/gi, '$1##CODE##')
+      .replace(/(^|\n)\s*(#{0,2}ENDCODE##)/gi, '$1##ENDCODE##')
+      .replace(/(^|\n)\s*(#{0,2}IMAGE##)/gi, '$1##IMAGE##')
+      .replace(/(^|\n)\s*(#{0,2}END##)/gi, '$1##END##')
+      .replace(/(^|\n)\s*(#{0,3}SUB###)/gi, '$1###SUB###')
+      .replace(/(^|\n)\s*(#{0,3}SUBEXP###)/gi, '$1###SUBEXP###')
+      .replace(/(^|\n)\s*(#{0,3}SUBBULLETS###)/gi, '$1###SUBBULLETS###')
+      .replace(/(^|\n)\s*(#{0,3}SUBEND###|ENDSUB)/gi, '$1###SUBEND###')
+      .replace(/(^|\n)\s*(#{0,2}Q##)/gi, '$1##Q##')
+      .replace(/(^|\n)\s*(#{0,2}A##)/gi, '$1##A##')
+      .replace(/(^|\n)\s*(#{0,2}STEPS##)/gi, '$1##STEPS##')
+      .replace(/(^|\n)\s*(#{0,2}QIMAGE##)/gi, '$1##QIMAGE##')
+      .replace(/(^|\n)\s*(#{0,2}QEND##)/gi, '$1##QEND##');
+  }
+
+  private cleanStructuredText(text: string): string {
+    return (text || '')
+      .replace(/#{2,3}(?:TOPIC|EXPLANATION|SUBTOPICS|BULLETS|CODE|ENDCODE|IMAGE|END|SUB|SUBEXP|SUBBULLETS|SUBEND|Q|A|STEPS|QIMAGE|QEND)#{2,3}/gi, '')
+      .replace(/\b(?:SUBTOPICS|SUBBULLETS|SUBEXP|SUBEND|ENDSUB|BULLETS|IMAGE|END)#{0,3}\b/gi, '')
+      .replace(/\*\*(.*?)\*\*/g, '$1')
+      .replace(/^[\s#:\-]+|[\s#:\-]+$/g, '')
+      .replace(/[ \t]{2,}/g, ' ')
+      .trim();
+  }
 
   parseTopics(text: string) {
+    // Try JSON parsing first
+    try {
+      const jsonMatch = text.match(/\{[\s\S]*"topics"[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (parsed.topics?.length) {
+          this.topics = [...this.topics, ...parsed.topics.map((t: any) => ({
+            title: t.title || '',
+            explanation: t.explanation || '',
+            subtopics: (t.subtopics || []).map((s: any) => ({
+              title: s.title || '',
+              explanation: s.explanation || '',
+              bullets: s.bullets || []
+            })),
+            bullets: t.bullets || [],
+            codes: t.codes || [],
+            image: t.image || ''
+          }))].filter(t => t.title);
+          return;
+        }
+      }
+    } catch {}
+    // Fallback to marker parsing
     this.topics = [];
-    const blocks = text.split('##TOPIC##').filter(b => b.trim());
+    const normalizedText = this.normalizeSummaryMarkers(text);
+    const blocks = normalizedText.split('##TOPIC##').filter(b => b.trim());
 
     for (const block of blocks) {
       const titleMatch = block.match(/^([\s\S]*?)##EXPLANATION##/);
@@ -479,13 +551,13 @@ ${this.chunkResults.join('\n\n').slice(0, 8000)}`;
       const bulletsMatch = block.match(/##BULLETS##([\s\S]*?)(?:##CODE##|##IMAGE##|##END##)/);
       const imageMatch = block.match(/##IMAGE##([\s\S]*?)##END##/);
 
-      const title = titleMatch ? titleMatch[1].trim() : '';
-      const explanation = explanationMatch ? explanationMatch[1].trim() : '';
+      const title = titleMatch ? this.cleanStructuredText(titleMatch[1]) : '';
+      const explanation = explanationMatch ? this.cleanStructuredText(explanationMatch[1]) : '';
       const bulletsRaw = bulletsMatch ? bulletsMatch[1].trim() : '';
-      const image = imageMatch ? imageMatch[1].trim() : '';
+      const image = imageMatch ? this.cleanStructuredText(imageMatch[1]) : '';
 
       const bullets = bulletsRaw.split('\n')
-        .map((l: string) => l.replace(/^[-•*]\s*/, '').trim())
+        .map((l: string) => this.cleanStructuredText(l.replace(/^[-*\u2022]\s*/, '')))
         .filter((l: string) => l.length > 2);
 
       // parse subtopics
@@ -496,11 +568,11 @@ ${this.chunkResults.join('\n\n').slice(0, 8000)}`;
         const subExpMatch = sb.match(/###SUBEXP###([\s\S]*?)(?:###SUBBULLETS###|###SUBEND###)/);
         const subBulletsMatch = sb.match(/###SUBBULLETS###([\s\S]*?)###SUBEND###/);
 
-        const subTitle = subTitleMatch ? subTitleMatch[1].trim() : '';
-        const subExp = subExpMatch ? subExpMatch[1].trim() : '';
+        const subTitle = subTitleMatch ? this.cleanStructuredText(subTitleMatch[1]) : '';
+        const subExp = subExpMatch ? this.cleanStructuredText(subExpMatch[1]) : '';
         const subBulletsRaw = subBulletsMatch ? subBulletsMatch[1].trim() : '';
         const subBullets = subBulletsRaw.split('\n')
-          .map((l: string) => l.replace(/^[-•*]\s*/, '').trim())
+        .map((l: string) => this.cleanStructuredText(l.replace(/^[-*\u2022]\s*/, '')))
           .filter((l: string) => l.length > 2);
 
         if (subTitle) subtopics.push({ title: subTitle, explanation: subExp, bullets: subBullets });
@@ -524,7 +596,25 @@ ${this.chunkResults.join('\n\n').slice(0, 8000)}`;
   }
 
   parseQuestions(text: string) {
+    // Try JSON first
+    try {
+      const jsonMatch = text.match(/\{[\s\S]*"questions"[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (parsed.questions?.length) {
+          this.questions = parsed.questions.map((q: any) => ({
+            q: q.q || '',
+            a: q.a || '',
+            steps: q.steps || [],
+            image: q.image || ''
+          })).filter((q: any) => q.q);
+          return;
+        }
+      }
+    } catch {}
+    // Fallback to marker parsing
     this.questions = [];
+    text = this.normalizeSummaryMarkers(text);
     const startIdx = text.indexOf('##Q##');
     if (startIdx === -1) return;
     const blocks = text.slice(startIdx).split('##Q##').filter(b => b.trim());
@@ -535,13 +625,13 @@ ${this.chunkResults.join('\n\n').slice(0, 8000)}`;
       const stepsMatch = block.match(/##STEPS##([\s\S]*?)(?:##QIMAGE##|##QEND##)/);
       const imageMatch = block.match(/##QIMAGE##([\s\S]*?)##QEND##/);
 
-      const q = qMatch ? qMatch[1].trim() : '';
-      const a = aMatch ? aMatch[1].trim() : '';
+      const q = qMatch ? this.cleanStructuredText(qMatch[1]) : '';
+      const a = aMatch ? this.cleanStructuredText(aMatch[1]) : '';
       const stepsRaw = stepsMatch ? stepsMatch[1].trim() : '';
       const image = imageMatch ? imageMatch[1].trim() : '';
 
       const steps = stepsRaw.split('\n')
-        .map((l: string) => l.replace(/^[-•*]\s*/, '').trim())
+        .map((l: string) => this.cleanStructuredText(l.replace(/^[-*\u2022]\s*/, '')))
         .filter((l: string) => l.length > 5);
 
       if (q) this.questions.push({ q, a, steps, image: image === 'NONE' || !image ? '' : image });
@@ -628,7 +718,7 @@ ${this.chunkResults.join('\n\n').slice(0, 8000)}`;
         out += line('-', 40) + '\n';
       });
 
-      if (t.image) out += `\n  📊 Visual: ${clean(t.image)}\n`;
+      if (t.image) out += `\n  Visual: ${clean(t.image)}\n`;
       out += '\n';
     });
 
@@ -651,9 +741,10 @@ ${this.chunkResults.join('\n\n').slice(0, 8000)}`;
   }
 
   downloadPDF() {
-    const title = this.detectedSubject || this.fileName || 'Study Notes';
+    const rawTitle = this.detectedSubject || this.fileName || 'Study Notes';
     const lines: PdfLine[] = [];
-    const clean = (s: string) => (s || '').replace(/\*\*(.*?)\*\*/g, '$1').trim();
+    const clean = (s: string) => this.cleanStructuredText(s);
+    const pdfTitle = clean(rawTitle).length > 140 ? clean(this.fileName || 'Study Notes') : clean(rawTitle);
     const splitTerm = (s: string): { term: string; detail: string } | null => {
       const m = clean(s).match(/^([^:]{2,80}):\s*(.+)$/);
       return m ? { term: m[1].trim(), detail: m[2].trim() } : null;
@@ -669,16 +760,16 @@ ${this.chunkResults.join('\n\n').slice(0, 8000)}`;
         s.bullets.forEach((b, bi) => {
           const styles: Array<'dot'|'arrow'|'star'|'square'|'hollow'> = ['hollow','arrow','square'];
           const pair = splitTerm(b);
-          if (pair) lines.push({ type: 'definition', term: pair.term, def: pair.detail });
-          else lines.push({ type: 'bullet', text: clean(b), bulletStyle: styles[bi % 3] });
+          if (pair) lines.push({ type: 'bullet', text: `${pair.term}: ${pair.detail}`, bulletStyle: 'hollow', level: 2 });
+          else lines.push({ type: 'bullet', text: clean(b), bulletStyle: styles[bi % 3], level: 2 });
         });
       });
 
       t.bullets.forEach((b, bi) => {
         const styles: Array<'dot'|'arrow'|'star'|'square'|'hollow'> = ['dot','arrow','star','square','hollow'];
         const pair = splitTerm(b);
-        if (pair) lines.push({ type: 'kp', text: pair.term, def: pair.detail });
-        else lines.push({ type: 'bullet', text: clean(b), bulletStyle: styles[bi % 5] });
+        if (pair) lines.push({ type: 'bullet', text: `${pair.term}: ${pair.detail}`, bulletStyle: 'dot', level: 1 });
+        else lines.push({ type: 'bullet', text: clean(b), bulletStyle: styles[bi % 5], level: 1 });
       });
       t.codes.forEach(c => lines.push({ type: 'code', text: c.code, label: c.lang }));
       lines.push({ type: 'divider' });
@@ -702,8 +793,8 @@ ${this.chunkResults.join('\n\n').slice(0, 8000)}`;
 
     this.pdf.save(
       `study-notes-${(this.fileName || 'notes').replace(/\s+/g, '-').toLowerCase()}.pdf`,
-      title,
-      `${this.topics.length} topics · ${this.questions.length} Q&A`,
+      pdfTitle,
+      `${this.topics.length} topics - ${this.questions.length} Q&A`,
       lines,
       { template: 'study' }
     );
@@ -1038,7 +1129,7 @@ ${this.chunkResults.join('\n\n').slice(0, 8000)}`;
     });
     // Subtitle line
     cover.addShape(pptx.ShapeType.rect, { x: 0.6, y: 4.6, w: 2.5, h: 0.05, fill: { color: theme.primary } });
-    cover.addText(`${this.topics.length} Topics  \u00b7  ${this.questions.length} Q&A  \u00b7  AI Learning Hub`, {
+    cover.addText(`Topics: ${this.topics.length}  |  Q&A: ${this.questions.length}`, {
       x: 0.6, y: 4.8, w: 10, h: 0.5,
       fontSize: 14, color: theme.accent, fontFace: TN, align: 'left'
     });
@@ -1185,7 +1276,7 @@ ${this.chunkResults.join('\n\n').slice(0, 8000)}`;
       questions: JSON.parse(JSON.stringify(this.questions))
     });
     localStorage.setItem('summarizer_history', JSON.stringify(history.slice(0, 50)));
-    this.savedMsg = '✓ Saved!';
+    this.savedMsg = 'Saved!';
     setTimeout(() => this.savedMsg = '', 2500);
   }
 
@@ -1225,3 +1316,6 @@ export function parseBoldMarkdown(text: string, options: any): TextRun[] {
   
   return runs.length > 0 ? runs : [new TextRun({ font: TN, size: 22, ...options, text: '' })];
 }
+
+
+
