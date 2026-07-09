@@ -116,56 +116,72 @@ export class UploadComponent implements OnInit {
     this.reset();
     this.fileName = file.name;
     this.progress = 'Reading file...';
+    this.errorMsg = '';
 
     const ext = file.name.split('.').pop()?.toLowerCase();
 
-    if (ext === 'txt') {
-      this.fileContent = await file.text();
-      this.progress = '';
-    }
+    try {
+      if (ext === 'txt' || ext === 'md') {
+        this.fileContent = await file.text();
 
-    if (ext === 'pdf') {
-      this.pdfArrayBuffer = await file.arrayBuffer();
-      const typedArray = new Uint8Array(this.pdfArrayBuffer as ArrayBuffer);
-      const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
-      let text = '';
-      for (let i = 1; i <= pdf.numPages; i++) {
-        this.progress = `Reading page ${i} of ${pdf.numPages}...`;
-        const page = await pdf.getPage(i);
-        const content = await page.getTextContent();
-        if (text) text += '\n\n';
-        text += this.extractPdfPageText(content.items as any[]) + '\n';
+      } else if (ext === 'pdf') {
+        this.pdfArrayBuffer = await file.arrayBuffer();
+        const typedArray = new Uint8Array(this.pdfArrayBuffer as ArrayBuffer);
+        const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
+        let text = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+          this.progress = `Reading page ${i} of ${pdf.numPages}...`;
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          if (text) text += '\n\n';
+          text += this.extractPdfPageText(content.items as any[]) + '\n';
+        }
+        this.fileContent = this.cleanPdfText(text);
+        if (!this.fileContent.trim()) {
+          this.errorMsg = 'Could not extract text from this PDF. It may be image-based or scanned.';
+        }
+
+      } else if (ext === 'docx') {
+        const buf = await file.arrayBuffer();
+        const result = await (mammoth as any).extractRawText({ arrayBuffer: buf });
+        this.fileContent = result.value || '';
+        if (!this.fileContent.trim()) {
+          this.errorMsg = 'Could not extract text from this DOCX file.';
+        }
+
+      } else if (ext === 'pptx' || ext === 'ppt') {
+        const buf = await file.arrayBuffer();
+        const zip = await (JSZip as any).loadAsync(buf);
+        const slideFiles = Object.keys(zip.files)
+          .filter((name: string) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
+          .sort((a, b) => {
+            const na = parseInt(a.match(/\d+/)?.[0] || '0');
+            const nb = parseInt(b.match(/\d+/)?.[0] || '0');
+            return na - nb;
+          });
+        let text = '';
+        for (let idx = 0; idx < slideFiles.length; idx++) {
+          this.progress = `Reading slide ${idx + 1} of ${slideFiles.length}...`;
+          const xml = await zip.files[slideFiles[idx]].async('string');
+          const textMatches = xml.match(/<a:t[^>]*>([^<]*)<\/a:t>/g) || [];
+          const slideText = textMatches
+            .map((m: string) => m.replace(/<[^>]+>/g, '').trim())
+            .filter((t: string) => t.length > 0)
+            .join(' ');
+          if (slideText) text += `[Slide ${idx + 1}] ${slideText}\n\n`;
+        }
+        this.fileContent = text;
+
+      } else {
+        this.errorMsg = `Unsupported file type ".${ext}". Please use PDF, DOCX, PPTX, or TXT.`;
       }
-      this.fileContent = this.cleanPdfText(text);
-      this.progress = '';
+    } catch (err: any) {
+      console.error('[File Read Error]', err);
+      this.errorMsg = `Could not read file: ${err?.message || 'Unknown error'}. Please try a different file.`;
+      this.fileContent = '';
     }
 
-    if (ext === 'docx') {
-      const buf = await file.arrayBuffer();
-      const result = await (mammoth as any).extractRawText({ arrayBuffer: buf });
-      this.fileContent = result.value || '';
-      this.progress = '';
-    }
-
-    if (ext === 'pptx' || ext === 'ppt') {
-      const buf = await file.arrayBuffer();
-      const zip = await (JSZip as any).loadAsync(buf);
-      const slideFiles = Object.keys(zip.files)
-        .filter((name: string) => name.match(/^ppt\/slides\/slide\d+\.xml$/))
-        .sort();
-      let text = '';
-      for (const sf of slideFiles) {
-        const xml = await zip.files[sf].async('string');
-        const textMatches = xml.match(/<a:t[^>]*>([^<]*)<\/a:t>/g) || [];
-        const slideText = textMatches
-          .map((m: string) => m.replace(/<[^>]+>/g, '').trim())
-          .filter((t: string) => t.length > 0)
-          .join(' ');
-        if (slideText) text += slideText + '\n\n';
-      }
-      this.fileContent = text;
-      this.progress = '';
-    }
+    this.progress = '';
   }
 
   get canGenerate(): boolean {
@@ -259,6 +275,9 @@ export class UploadComponent implements OnInit {
 
     this.extractPdfImages();
 
+    // Store original content for Q&A (not raw AI JSON)
+    const originalContent = content;
+
     try {
       for (let i = 0; i < chunks.length; i++) {
         this.progress = `Processing section ${i + 1} of ${chunks.length}...`;
@@ -280,33 +299,34 @@ ${chunks[i]}
 
 Output complete JSON now:`;
 
-        let text = '';
+        let chunkText = '';
         try {
           const res: any = await lastValueFrom(this.ai.generateWithGroq(prompt, 2048));
-          text = res?.choices?.[0]?.message?.content || '';
+          chunkText = res?.choices?.[0]?.message?.content || '';
         } catch (chunkErr: any) {
           const s = chunkErr?.status;
           if (s === 429) {
-            // Rate limited — wait longer and retry once with smaller output
             this.progress = `Rate limited — waiting 15s before retrying section ${i + 1}...`;
             await new Promise(r => setTimeout(r, 15000));
             try {
               const retryRes: any = await lastValueFrom(this.ai.generateWithGroq(prompt, 1536));
-              text = retryRes?.choices?.[0]?.message?.content || '';
+              chunkText = retryRes?.choices?.[0]?.message?.content || '';
             } catch {
-              // If still fails, use local fallback for this chunk
-              text = this.buildLocalChunkJson(chunks[i]);
+              chunkText = this.buildLocalChunkJson(chunks[i]);
             }
           } else {
-            throw chunkErr; // re-throw non-429 errors
+            // Any other error — use local fallback for this chunk, don't abort all
+            chunkText = this.buildLocalChunkJson(chunks[i]);
           }
         }
 
-        if (text) this.chunkResults.push(text);
-        this.parseTopics(this.chunkResults.join('\n\n'));
+        // Parse this chunk independently — don't join all results (avoids greedy regex bug)
+        if (chunkText) {
+          this.chunkResults.push(chunkText);
+          this.parseAndMergeTopics(chunkText);
+        }
         this.progress = `Section ${i + 1} of ${chunks.length} done — ${this.topics.length} topics found...`;
 
-        // Inter-chunk delay to avoid hitting rate limits on next call
         if (i < chunks.length - 1) {
           await new Promise(r => setTimeout(r, 3000));
         }
@@ -317,11 +337,15 @@ Output complete JSON now:`;
 
       const topicList = this.topics.map((t, idx) => `${idx + 1}. ${t.title.replace(/\*\*/g, '')}`).join('\n');
 
+      // Use original content (not raw AI JSON) for Q&A context
       const qaPrompt = `Generate 8 exam questions as JSON. Output ONLY valid JSON:
 {"questions":[{"q":"Question text?","a":"Detailed answer introduction.","steps":["Step 1 explanation","Step 2 explanation","Step 3 explanation"],"image":""}]}
 
-Topics covered: ${topicList}
-Content: ${this.chunkResults.join('\n\n').slice(0, 5000)}
+Topics covered:
+${topicList}
+
+Source material (first 4000 chars):
+${originalContent.slice(0, 4000)}
 
 Output JSON now:`;
 
@@ -331,18 +355,16 @@ Output JSON now:`;
         qaText = qaRes?.choices?.[0]?.message?.content || '';
       } catch (qaErr: any) {
         if (qaErr?.status === 429) {
-          // Rate limited on Q&A — wait and retry
           this.progress = 'Rate limited — waiting 15s for Q&A generation...';
           await new Promise(r => setTimeout(r, 15000));
           try {
             const retryQaRes: any = await lastValueFrom(this.ai.generateWithGroq(qaPrompt, 1536));
             qaText = retryQaRes?.choices?.[0]?.message?.content || '';
           } catch {
-            // Build basic Q&A from topics if AI fails
             qaText = this.buildLocalQAJson();
           }
         } else {
-          qaText = this.buildLocalQAJson(); // fallback for any Q&A error
+          qaText = this.buildLocalQAJson();
         }
       }
 
@@ -585,124 +607,162 @@ Output JSON now:`;
       .trim();
   }
 
-  parseTopics(text: string) {
-    // Try JSON parsing first
+  /** Parse a single chunk's JSON and MERGE into existing topics (no reset, no duplication) */
+  parseAndMergeTopics(chunkText: string) {
+    const newTopics = this.extractTopicsFromText(chunkText);
+    if (newTopics.length > 0) {
+      // Deduplicate by title before merging
+      const existingTitles = new Set(this.topics.map(t => t.title.toLowerCase().trim()));
+      const unique = newTopics.filter(t => !existingTitles.has(t.title.toLowerCase().trim()));
+      this.topics = [...this.topics, ...unique];
+    }
+  }
+
+  /** Extract topics array from a single AI response text */
+  private extractTopicsFromText(text: string): TopicBlock[] {
+    if (!text?.trim()) return [];
+
+    // Try JSON parsing — find first complete {"topics":[...]} object
     try {
-      const jsonMatch = text.match(/\{[\s\S]*"topics"[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        if (parsed.topics?.length) {
-          this.topics = [...this.topics, ...parsed.topics.map((t: any) => ({
-            title: t.title || '',
-            explanation: t.explanation || '',
-            subtopics: (t.subtopics || []).map((s: any) => ({
-              title: s.title || '',
-              explanation: s.explanation || '',
-              bullets: s.bullets || []
-            })),
-            bullets: t.bullets || [],
-            codes: t.codes || [],
-            image: t.image || ''
-          }))].filter(t => t.title);
-          return;
+      // Non-greedy: find the first { and match until we find the matching }
+      const start = text.indexOf('{');
+      if (start !== -1) {
+        let depth = 0;
+        let inStr = false;
+        let escape = false;
+        let end = -1;
+        for (let i = start; i < text.length; i++) {
+          const ch = text[i];
+          if (escape) { escape = false; continue; }
+          if (ch === '\\' && inStr) { escape = true; continue; }
+          if (ch === '"') { inStr = !inStr; continue; }
+          if (inStr) continue;
+          if (ch === '{') depth++;
+          else if (ch === '}') { depth--; if (depth === 0) { end = i; break; } }
+        }
+        if (end !== -1) {
+          const jsonStr = text.slice(start, end + 1);
+          const parsed = JSON.parse(jsonStr);
+          if (parsed.topics?.length) {
+            return parsed.topics.map((t: any) => ({
+              title: t.title || '',
+              explanation: t.explanation || '',
+              subtopics: (t.subtopics || []).map((s: any) => ({
+                title: s.title || '',
+                explanation: s.explanation || '',
+                bullets: Array.isArray(s.bullets) ? s.bullets : []
+              })),
+              bullets: Array.isArray(t.bullets) ? t.bullets : [],
+              codes: Array.isArray(t.codes) ? t.codes.filter((c: any) => c.code) : [],
+              image: t.image && t.image !== 'NONE' ? t.image : ''
+            })).filter((t: TopicBlock) => t.title.trim());
+          }
         }
       }
-    } catch {}
-    // Fallback to marker parsing
-    this.topics = [];
-    const normalizedText = this.normalizeSummaryMarkers(text);
-    const blocks = normalizedText.split('##TOPIC##').filter(b => b.trim());
+    } catch { /* fall through to marker parse */ }
 
+    // Fallback: marker-based parse
+    const result: TopicBlock[] = [];
+    const normalized = this.normalizeSummaryMarkers(text);
+    const blocks = normalized.split('##TOPIC##').filter(b => b.trim());
     for (const block of blocks) {
       const titleMatch = block.match(/^([\s\S]*?)##EXPLANATION##/);
       const explanationMatch = block.match(/##EXPLANATION##([\s\S]*?)(?:##SUBTOPICS##|##BULLETS##|##END##)/);
       const bulletsMatch = block.match(/##BULLETS##([\s\S]*?)(?:##CODE##|##IMAGE##|##END##)/);
       const imageMatch = block.match(/##IMAGE##([\s\S]*?)##END##/);
-
       const title = titleMatch ? this.cleanStructuredText(titleMatch[1]) : '';
+      if (!title) continue;
       const explanation = explanationMatch ? this.cleanStructuredText(explanationMatch[1]) : '';
-      const bulletsRaw = bulletsMatch ? bulletsMatch[1].trim() : '';
-      const image = imageMatch ? this.cleanStructuredText(imageMatch[1]) : '';
-
-      const bullets = bulletsRaw.split('\n')
+      const bullets = (bulletsMatch?.[1] || '').trim().split('\n')
         .map((l: string) => this.cleanStructuredText(l.replace(/^[-*\u2022]\s*/, '')))
         .filter((l: string) => l.length > 2);
-
-      // parse subtopics
+      const image = imageMatch ? this.cleanStructuredText(imageMatch[1]) : '';
       const subtopics: SubTopic[] = [];
-      const subBlocks = block.split('###SUB###').slice(1);
-      for (const sb of subBlocks) {
-        const subTitleMatch = sb.match(/^([\s\S]*?)###SUBEXP###/);
-        const subExpMatch = sb.match(/###SUBEXP###([\s\S]*?)(?:###SUBBULLETS###|###SUBEND###)/);
-        const subBulletsMatch = sb.match(/###SUBBULLETS###([\s\S]*?)###SUBEND###/);
-
-        const subTitle = subTitleMatch ? this.cleanStructuredText(subTitleMatch[1]) : '';
-        const subExp = subExpMatch ? this.cleanStructuredText(subExpMatch[1]) : '';
-        const subBulletsRaw = subBulletsMatch ? subBulletsMatch[1].trim() : '';
-        const subBullets = subBulletsRaw.split('\n')
-        .map((l: string) => this.cleanStructuredText(l.replace(/^[-*\u2022]\s*/, '')))
-          .filter((l: string) => l.length > 2);
-
-        if (subTitle) subtopics.push({ title: subTitle, explanation: subExp, bullets: subBullets });
-      }
-
-      const codes: { lang: string; code: string }[] = [];
-      const codeRegex = /##CODE##\s*(\w*)\n([\s\S]*?)##ENDCODE##/g;
-      let codeMatch;
-      while ((codeMatch = codeRegex.exec(block)) !== null) {
-        const codeContent = codeMatch[2].trim();
-        if (codeContent.length > 5) codes.push({ lang: codeMatch[1] || 'code', code: codeContent });
-      }
-
-      if (title) {
-        const cleanImage = image.trim();
-        this.topics.push({ title, explanation, subtopics, bullets, codes,
-          image: (!cleanImage || cleanImage.toUpperCase() === 'NONE' || cleanImage.length < 5) ? '' : cleanImage
+      for (const sb of block.split('###SUB###').slice(1)) {
+        const st = sb.match(/^([\s\S]*?)###SUBEXP###/)?.[1];
+        const se = sb.match(/###SUBEXP###([\s\S]*?)(?:###SUBBULLETS###|###SUBEND###)/)?.[1];
+        const sb2 = sb.match(/###SUBBULLETS###([\s\S]*?)###SUBEND###/)?.[1];
+        const subTitle = st ? this.cleanStructuredText(st) : '';
+        if (subTitle) subtopics.push({
+          title: subTitle,
+          explanation: se ? this.cleanStructuredText(se) : '',
+          bullets: (sb2 || '').trim().split('\n').map((l: string) => this.cleanStructuredText(l.replace(/^[-*\u2022]\s*/, ''))).filter((l: string) => l.length > 2)
         });
       }
+      const codes: { lang: string; code: string }[] = [];
+      const codeRe = /##CODE##\s*(\w*)\n([\s\S]*?)##ENDCODE##/g;
+      let cm;
+      while ((cm = codeRe.exec(block)) !== null) {
+        if (cm[2].trim().length > 5) codes.push({ lang: cm[1] || 'code', code: cm[2].trim() });
+      }
+      result.push({ title, explanation, subtopics, bullets, codes, image: (!image || image.toUpperCase() === 'NONE' || image.length < 5) ? '' : image });
     }
+    return result;
+  }
+
+  parseTopics(text: string) {
+    // Reset and re-parse all (used for backward compat / history load)
+    this.topics = [];
+    const newTopics = this.extractTopicsFromText(text);
+    this.topics = newTopics;
   }
 
   parseQuestions(text: string) {
-    // Try JSON first
+    this.questions = [];
+    if (!text?.trim()) return;
+
+    // Try JSON first — brace-depth scan (no greedy regex)
     try {
-      const jsonMatch = text.match(/\{[\s\S]*"questions"[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        if (parsed.questions?.length) {
-          this.questions = parsed.questions.map((q: any) => ({
-            q: q.q || '',
-            a: q.a || '',
-            steps: q.steps || [],
-            image: q.image || ''
-          })).filter((q: any) => q.q);
-          return;
+      const start = text.indexOf('{');
+      if (start !== -1) {
+        let depth = 0, inStr = false, escape = false, end = -1;
+        for (let i = start; i < text.length; i++) {
+          const ch = text[i];
+          if (escape) { escape = false; continue; }
+          if (ch === '\\' && inStr) { escape = true; continue; }
+          if (ch === '"') { inStr = !inStr; continue; }
+          if (inStr) continue;
+          if (ch === '{') depth++;
+          else if (ch === '}') { depth--; if (depth === 0) { end = i; break; } }
+        }
+        if (end !== -1) {
+          const parsed = JSON.parse(text.slice(start, end + 1));
+          if (parsed.questions?.length) {
+            this.questions = parsed.questions
+              .filter((q: any) => q.q?.trim())
+              .map((q: any) => ({
+                q: q.q || '',
+                a: q.a || '',
+                steps: Array.isArray(q.steps) ? q.steps.filter((s: any) => s) : [],
+                image: q.image && q.image !== 'NONE' ? q.image : ''
+              }));
+            return;
+          }
         }
       }
-    } catch {}
-    // Fallback to marker parsing
-    this.questions = [];
-    text = this.normalizeSummaryMarkers(text);
-    const startIdx = text.indexOf('##Q##');
+    } catch { /* fall through */ }
+
+    // Marker fallback
+    const normalized = this.normalizeSummaryMarkers(text);
+    const startIdx = normalized.indexOf('##Q##');
     if (startIdx === -1) return;
-    const blocks = text.slice(startIdx).split('##Q##').filter(b => b.trim());
-
+    const blocks = normalized.slice(startIdx).split('##Q##').filter(b => b.trim());
     for (const block of blocks) {
-      const qMatch = block.match(/^([\s\S]*?)##A##/);
-      const aMatch = block.match(/##A##([\s\S]*?)(?:##STEPS##|##QIMAGE##|##QEND##)/);
-      const stepsMatch = block.match(/##STEPS##([\s\S]*?)(?:##QIMAGE##|##QEND##)/);
-      const imageMatch = block.match(/##QIMAGE##([\s\S]*?)##QEND##/);
-
-      const q = qMatch ? this.cleanStructuredText(qMatch[1]) : '';
-      const a = aMatch ? this.cleanStructuredText(aMatch[1]) : '';
-      const stepsRaw = stepsMatch ? stepsMatch[1].trim() : '';
-      const image = imageMatch ? imageMatch[1].trim() : '';
-
-      const steps = stepsRaw.split('\n')
+      const q = block.match(/^([\s\S]*?)##A##/)?.[1];
+      const a = block.match(/##A##([\s\S]*?)(?:##STEPS##|##QIMAGE##|##QEND##)/)?.[1];
+      const stepsRaw = block.match(/##STEPS##([\s\S]*?)(?:##QIMAGE##|##QEND##)/)?.[1];
+      const image = block.match(/##QIMAGE##([\s\S]*?)##QEND##/)?.[1];
+      const qText = q ? this.cleanStructuredText(q) : '';
+      if (!qText) continue;
+      const steps = (stepsRaw || '').trim().split('\n')
         .map((l: string) => this.cleanStructuredText(l.replace(/^[-*\u2022]\s*/, '')))
         .filter((l: string) => l.length > 5);
-
-      if (q) this.questions.push({ q, a, steps, image: image === 'NONE' || !image ? '' : image });
+      this.questions.push({
+        q: qText,
+        a: a ? this.cleanStructuredText(a) : '',
+        steps,
+        image: image && image.trim() !== 'NONE' ? image.trim() : ''
+      });
     }
   }
 
@@ -1136,8 +1196,13 @@ Output JSON now:`;
       },
       sections: [{ children }]
     });
-    const blob = await Packer.toBlob(doc);
-    this.triggerDownload(blob, 'study-notes.docx');
+    try {
+      const blob = await Packer.toBlob(doc);
+      this.triggerDownload(blob, 'study-notes.docx');
+    } catch (e: any) {
+      console.error('[DOCX Export Error]', e);
+      alert('Could not generate DOCX file. Try downloading as PDF or TXT instead.');
+    }
   }
 
   downloadPPT() {
@@ -1149,7 +1214,8 @@ Output JSON now:`;
     const theme = this.getThemeColors(themeType);
     const TN = 'Times New Roman';
     const WHITE = 'FFFFFF';
-    const rawLogoData = BRAND_LOGO_B64.split(';base64,').pop() || '';
+    // pptxgenjs addImage with `data:` expects FULL data URL (not stripped base64)
+    const rawLogoData = BRAND_LOGO_B64; // full data URL: "data:image/png;base64,..."
 
     const BULLET_SYMBOLS: Record<string, string> = {
       'square': '▪', '▪': '▪', 'solid-square': '▪',
@@ -1333,18 +1399,23 @@ Output JSON now:`;
   saveToHistory() {
     if (!this.topics.length) return;
     const title = this.detectedSubject || this.fileName || 'Study Notes';
-    const history = JSON.parse(localStorage.getItem('summarizer_history') || '[]');
-    history.unshift({
-      type: 'summary',
-      title,
-      date: new Date().toLocaleDateString(),
-      preview: this.topics[0]?.explanation?.replace(/\*\*(.*?)\*\*/g, '$1')?.slice(0, 100) || '',
-      content: this.topics.map(t => `${t.title.replace(/\*\*(.*?)\*\*/g,'')}: ${t.explanation.replace(/\*\*(.*?)\*\*/g,'$1')}`).join('\n'),
-      topics: JSON.parse(JSON.stringify(this.topics)),
-      questions: JSON.parse(JSON.stringify(this.questions))
-    });
-    localStorage.setItem('summarizer_history', JSON.stringify(history.slice(0, 50)));
-    this.savedMsg = 'Saved!';
+    try {
+      const history = JSON.parse(localStorage.getItem('summarizer_history') || '[]');
+      history.unshift({
+        type: 'summary',
+        title,
+        date: new Date().toLocaleDateString(),
+        preview: this.topics[0]?.explanation?.replace(/\*\*(.*?)\*\*/g, '$1')?.slice(0, 100) || '',
+        content: this.topics.map(t => `${t.title.replace(/\*\*(.*?)\*\*/g,'')}: ${t.explanation.replace(/\*\*(.*?)\*\*/g,'$1')}`).join('\n'),
+        topics: JSON.parse(JSON.stringify(this.topics)),
+        questions: JSON.parse(JSON.stringify(this.questions))
+      });
+      localStorage.setItem('summarizer_history', JSON.stringify(history.slice(0, 50)));
+      this.savedMsg = 'Saved!';
+    } catch (e: any) {
+      // QuotaExceededError or JSON parse error
+      this.savedMsg = 'Could not save (storage full)';
+    }
     setTimeout(() => this.savedMsg = '', 2500);
   }
 
