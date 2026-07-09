@@ -113,7 +113,7 @@ export class SearchComponent {
   constructor(public yt: YoutubeService, private ai: AiService, private pdf: PdfService) {}
 
   onQueryInput(): void {
-    if (this.query.trim().length > 1) {
+    if (this.query.trim().length > 0) {
       this.suggestions = this.yt.getStudySuggestions(this.query);
       this.showSuggestions = this.suggestions.length > 0 && this.activeTab === 'search';
     } else {
@@ -144,15 +144,25 @@ export class SearchComponent {
     this.clearAI();
 
     const rawQuery = this.query.trim();
+    const pastedVideoId = this.yt.getVideoId(rawQuery);
+    if (pastedVideoId) {
+      this.urlInput = `https://www.youtube.com/watch?v=${pastedVideoId}`;
+      this.loadFromUrl();
+      return;
+    }
 
     this.yt.searchVideos(rawQuery).subscribe({
       next: (res: any) => {
         this.videos = res.items || [];
-        if ((res._source === 'curated' || res._source === 'ai-curated') && this.videos.length) {
-          this.searchInfo = `Showing curated results for "${rawQuery}" (live YouTube API unavailable)`;
+        if ((res._source === 'curated' || res._source === 'ai-curated' || res._source === 'curated-popular') && this.videos.length) {
+          if (res._fallbackNotice) {
+            this.searchInfo = res._fallbackNotice;
+          } else {
+            this.searchInfo = `Showing curated results for "${rawQuery}" (live YouTube API unavailable)`;
+          }
         }
         if (!this.videos.length) {
-          this.errorMsg = `No results found for "${rawQuery}". Try different keywords or paste a URL directly.`;
+          this.errorMsg = `No results found for "${rawQuery}". Try different keywords or paste a YouTube URL directly.`;
         }
         this.loading = false;
       },

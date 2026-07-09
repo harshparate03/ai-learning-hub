@@ -1049,27 +1049,35 @@ Return ONLY valid JSON (no markdown, no code fences):
     this.sourceContent = content;
     this.progress = 'Building mind map...';
 
-    const isShortTopic = !isContentBased && content.trim().split(/\s+/).length <= 20;
+    const wordCount = content.trim().split(/\s+/).length;
+    // Short topic = user typed a topic name (≤30 words, not a pasted document)
+    const isShortTopic = !isContentBased && wordCount <= 30;
 
     // ── CONTENT-BASED (file upload or long text) ────────────────────────────
     if (!isShortTopic) {
-      const contentPrompt = `Analyze this content and extract a mind map. Output ONLY valid JSON starting with {.
+      this.progress = 'Analyzing content...';
+      const snippet = content.slice(0, 10000);
+      const contentPrompt =
+`You must output ONLY a single valid JSON object. No markdown fences, no explanation, no extra text.
 
-CONTENT:
-${content.slice(0, 12000)}
+Build a mind map from this content. The JSON must follow this exact structure:
+{"root":{"id":"root","label":"TITLE","level":0,"definition":"What this content is about in 2 sentences.","children":[{"id":"b1","label":"Branch Name","level":1,"definition":"What this branch covers.","children":[{"id":"b1c1","label":"Subtopic","level":2,"definition":"Details.","children":[{"id":"b1c1d1","label":"Detail","level":3,"definition":"Specific point.","children":[]}]}]}]}}
 
-Rules:
-- root label = main title/topic found in the content
-- 6-8 branches = actual sections/themes FROM this content (no invented topics)
-- Labels: exact terms from content, 2-4 words
-- Definitions: 2-3 sentences using ONLY information from this content
-- 4-5 level-2 children per branch, 2-3 level-3 children per level-2
+CONTENT TO ANALYZE:
+${snippet}
 
-{"root":{"id":"root","label":"Title","level":0,"definition":"overview.","children":[{"id":"b1","label":"Section","level":1,"definition":"what this section covers.","children":[{"id":"b1a","label":"Subtopic","level":2,"definition":"details.","children":[{"id":"b1a1","label":"Detail","level":3,"definition":"specific point.","children":[]}]}]}]}}`;
+Requirements:
+- label at root = the main title/topic of the content
+- 6 to 8 branches = the actual major sections/themes found in the content above
+- Each branch: 3-5 level-2 children
+- Each level-2 child: 2-3 level-3 children
+- All labels: 2-5 words, taken directly from the content
+- Definitions: factual, from the content only
+- Output the complete JSON now:`;
 
       let res: any;
       try {
-        res = await this.ai.generateWithGroq(contentPrompt).toPromise();
+        res = await this.ai.generateWithGroq(contentPrompt, 3072).toPromise();
       } catch {
         this.buildLocalMindMap(content, isContentBased);
         return;
@@ -1081,70 +1089,127 @@ Rules:
       }
       this.parseRoot(text);
       if (!this.rootNode || this.errorMsg) {
+        this.errorMsg = '';
         this.buildLocalMindMap(content, isContentBased);
       }
       return;
     }
 
-    // ── SHORT TOPIC — 2-step approach ───────────────────────────────────────
-    // Step 1: Get 8 domain-specific branch names for this exact topic
+    // ── SHORT TOPIC — 3-step reliable approach ───────────────────────────────
+    // Step 1: Get domain-specific branch names
     this.progress = 'Analyzing topic...';
+    const topic = content.trim();
     let branchNames: string[] = [];
+
     try {
       const branchRes: any = await this.ai.generateWithGroq(
-        `List exactly 8 main topic areas/branches for a comprehensive mind map about "${content}". These must be the ACTUAL key areas of "${content}" — not generic ones.
-For example:
-- "Software Testing" → Unit Testing, Integration Testing, Test Automation, Bug Tracking, Test Design, QA Process, Testing Tools, Performance Testing
-- "Machine Learning" → Supervised Learning, Unsupervised Learning, Neural Networks, Feature Engineering, Model Evaluation, Algorithms, Deep Learning, Real-world Applications
-
-Now list 8 specific branches for "${content}". One per line, no numbering, no explanation.`
+`List exactly 8 specific subtopics/branches for a mind map about: "${topic}"
+Rules:
+- These must be REAL key areas of "${topic}", not generic headings
+- Each branch name: 2-4 words, specific to the domain
+- One per line, no numbers, no bullets, no explanation
+- Example for "Machine Learning": Supervised Learning, Neural Networks, Feature Engineering, Model Evaluation, Deep Learning, Reinforcement Learning, NLP Applications, ML Algorithms
+Output 8 lines only:`, 512
       ).toPromise();
-      const branchText = this.extractTextFromResponse(branchRes) || '';
-      branchNames = branchText
+
+      const raw = this.extractTextFromResponse(branchRes) || '';
+      branchNames = raw
         .split('\n')
-        .map(l => l.replace(/^[-*•\d.)\s]+/, '').trim())
-        .filter(l => l.length > 2 && l.length < 50)
+        .map((l: string) => l.replace(/^[-*•\d.):\s]+/, '').trim())
+        .filter((l: string) => l.length >= 3 && l.length <= 60)
         .slice(0, 8);
-    } catch {
-      // fallback branch names
-    }
+    } catch { /* use fallback */ }
 
-    // Ensure we have exactly 8 branches
     if (branchNames.length < 4) {
-      branchNames = ['Core Concepts', 'Types & Categories', 'Key Techniques', 'Tools & Technologies',
-                     'Process & Workflow', 'Benefits', 'Challenges', 'Best Practices'];
+      branchNames = [
+        'Core Concepts', 'Types & Variants', 'Key Techniques',
+        'Tools & Frameworks', 'Workflow & Process',
+        'Benefits & Advantages', 'Challenges & Limitations', 'Real-world Applications'
+      ];
+    }
+    while (branchNames.length < 8) {
+      branchNames.push(`Branch ${branchNames.length + 1}`);
     }
 
-    // Step 2: Build full tree using the domain-specific branch names
-    this.progress = 'Building mind map...';
+    // Step 2: Build each branch independently (avoids truncation)
+    this.progress = 'Building branches...';
+    const COLORS_LOCAL = this.COLORS;
 
-    const branchSchema = branchNames.map((name, i) =>
-      `{"id":"b${i+1}","label":"${name}","level":1,"definition":"2-sentence explanation of ${name} in context of ${content}.","children":[{"id":"b${i+1}a","label":"specific subtopic","level":2,"definition":"1-2 sentences.","children":[{"id":"b${i+1}a1","label":"detail","level":3,"definition":"1 sentence.","children":[]}]}]}`
-    ).join(',\n');
+    const buildOneBranch = async (branchName: string, idx: number): Promise<any> => {
+      const color = COLORS_LOCAL[idx % COLORS_LOCAL.length];
+      try {
+        const res: any = await this.ai.generateWithGroq(
+`Output ONLY a JSON object for one mind map branch. No markdown, no extra text.
 
-    const topicPrompt = `Create a complete mind map JSON for "${content}" using these 8 branches. Output ONLY valid JSON starting with {.
+Topic: "${topic}"
+Branch: "${branchName}"
 
-Fill in ALL children properly. Each branch needs 4-5 level-2 children, each with 2-3 level-3 children. Labels 2-4 words, definitions 1-2 sentences per node.
+JSON structure:
+{"label":"${branchName}","level":1,"definition":"2-sentence explanation of ${branchName} in ${topic}.","children":[{"label":"subtopic","level":2,"definition":"2 sentences.","children":[{"label":"detail","level":3,"definition":"1 sentence.","children":[]}]}]}
 
-{"root":{"id":"root","label":"${content}","level":0,"definition":"${content} is [define it in 2 sentences].","children":[${branchSchema}]}}`;
+Fill in 4 real children at level 2, each with 2-3 children at level 3. All labels 2-4 words specific to ${topic}/${branchName}. Output JSON now:`, 1024
+        ).toPromise();
+        const text = this.extractTextFromResponse(res);
+        const json = this.extractJson(text);
+        if (!json) throw new Error('no json');
+        const parsed = JSON.parse(json);
+        if (!parsed?.label) throw new Error('no label');
+        return this.initNodeWithColor({ ...parsed, level: 1 }, color, `b${idx}`);
+      } catch {
+        // Fallback: simple local branch
+        const fallbackChildren = [
+          `${branchName} Overview`, `${branchName} Types`, `${branchName} Examples`, `${branchName} Best Practices`
+        ].map((childLabel, ci) => ({
+          id: `b${idx}_c${ci}`,
+          label: childLabel,
+          level: 2,
+          definition: `${childLabel} is a key aspect of ${branchName} within ${topic}.`,
+          children: [],
+          color,
+          expanded: false,
+          orderPath: `${idx + 1}.${ci + 1}`
+        }));
+        return {
+          id: `b${idx}`,
+          label: branchName,
+          level: 1,
+          definition: `${branchName} is a fundamental area of ${topic}.`,
+          children: fallbackChildren,
+          color,
+          expanded: false,
+          orderPath: `${idx + 1}`
+        };
+      }
+    };
 
-    let res: any;
+    // Build all 8 branches in parallel for speed
+    this.progress = 'Building all branches...';
+    let branches: any[];
     try {
-      res = await this.ai.generateWithGroq(topicPrompt).toPromise();
+      branches = await Promise.all(branchNames.map((name, i) => buildOneBranch(name, i)));
     } catch {
       this.buildLocalMindMap(content, isContentBased);
       return;
     }
 
-    const text = this.extractTextFromResponse(res);
-    if (!text || this.ai.isDemoFallback(text)) {
-      this.buildLocalMindMap(content, isContentBased);
-      return;
-    }
-    this.parseRoot(text);
-    if (!this.rootNode || this.errorMsg) {
-      this.buildLocalMindMap(content, isContentBased);
-    }
+    // Step 3: Assemble root node
+    const topicTitle = topic.length > 60 ? topic.slice(0, 60) : topic;
+    this.rootNode = {
+      id: 'root',
+      label: topicTitle,
+      level: 0,
+      definition: `${topicTitle} is a comprehensive subject. This mind map covers its ${branches.length} key areas.`,
+      children: branches,
+      color: '#38bdf8',
+      expanded: true,
+      orderPath: ''
+    };
+
+    // Assign order paths
+    this.refreshNodeMeta(this.rootNode, 0, '', '#38bdf8');
+    this.rootNode.expanded = true;
+    this.errorMsg = '';
+    this.progress = '';
   }
 
   private buildLocalMindMap(content: string, isContentBased: boolean) {

@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+﻿import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable, of, forkJoin } from 'rxjs';
 import { map, catchError, switchMap } from 'rxjs/operators';
@@ -259,25 +259,34 @@ export class YoutubeService {
    *            to supplement results.
    */
   private searchWithAIFallback(query: string): Observable<any> {
-    const q = query.toLowerCase();
-    const keywords = q.split(/\s+/).filter(w => w.length > 1);
+    const q = query.toLowerCase().trim();
+    const keywords = q.split(/\s+/).filter((w: string) => w.length > 1);
 
-    // Score each curated video
+    // Score each curated video with improved matching
     const scored = CURATED_VIDEOS.map(v => {
       const haystack = `${v.title} ${v.channel} ${v.tags.join(' ')}`.toLowerCase();
       let score = 0;
       for (const kw of keywords) {
-        if (haystack.includes(kw)) score += kw.length; // longer keyword match = higher score
+        if (haystack.includes(kw)) {
+          score += kw.length * 2;
+        } else {
+          const haystackWords = haystack.split(/\s+/);
+          for (const hw of haystackWords) {
+            if (hw.startsWith(kw) || kw.startsWith(hw)) {
+              score += Math.min(kw.length, hw.length);
+            }
+          }
+        }
       }
-      // Exact phrase bonus
-      if (haystack.includes(q)) score += 20;
+      if (haystack.includes(q)) score += 30;
+      if (v.channel.toLowerCase().includes(q) || q.includes(v.channel.toLowerCase())) score += 15;
       return { ...v, score };
     })
     .filter(v => v.score > 0)
-    .sort((a, b) => b.score - a.score)
+    .sort((a: any, b: any) => b.score - a.score)
     .slice(0, 12);
 
-    const toVideoItem = (v: typeof scored[0]) => ({
+    const toVideoItem = (v: any) => ({
       id: { videoId: v.videoId },
       snippet: {
         title: v.title,
@@ -288,40 +297,21 @@ export class YoutubeService {
       _source: 'curated'
     });
 
-    // If we have 6+ curated matches return them immediately
-    if (scored.length >= 6) {
+    if (scored.length >= 4) {
       return of({ items: scored.map(toVideoItem), _source: 'curated' });
     }
-
-    // Otherwise supplement with AI-discovered videos via oEmbed validation
     return this.searchViaAIAndOEmbed(query, scored.map(toVideoItem));
   }
 
   private searchViaAIAndOEmbed(query: string, existingItems: any[]): Observable<any> {
-    const existingIds = new Set(existingItems.map(v => v.id.videoId));
-
-    const prompt = `You are a comprehensive YouTube video search assistant.
-Search topic: "${query}"
-
-List 15 real, relevant YouTube videos about "${query}".
-Include videos from all popular educational and technical channels.
-Prioritize:
-1. Educational channels: freeCodeCamp.org, Traversy Media, Programming with Mosh, Khan Academy, MIT OpenCourseWare
-2. Tech influencers: Fireship, NetworkChuck, Corey Schafer, Academind, TechWorld with Nana
-3. Creator channels: Bro Code, CodeWithHarry, Kunal Kushwaha, 3Blue1Brown, Simplilearn
-4. Any other popular channel covering the topic
-Each video ID must be exactly 11 characters.
-
-Return ONLY a JSON array â€” no markdown, no explanation:
-[{"videoId":"EXACT_11_CHAR_ID","title":"Real Title","channel":"Channel Name"}]`;
-
+    const existingIds = new Set(existingItems.map((v: any) => v.id.videoId));
+    const prompt = `List 12 real YouTube educational videos about: "${query}"\nReturn ONLY a JSON array:\n[{"videoId":"EXACT11CHARID","title":"Real Video Title","channel":"Channel Name"}]`;
     const body = {
       model: 'llama-3.3-70b-versatile',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.1,
-      max_tokens: 1000
+      max_tokens: 800
     };
-
     const groqHeaders = new HttpHeaders({ 'Authorization': `Bearer ${this.GROQ_KEY}`, 'Content-Type': 'application/json' });
     return this.http.post(this.GROQ_URL, body, { headers: groqHeaders }).pipe(
       switchMap((res: any) => {
@@ -331,18 +321,13 @@ Return ONLY a JSON array â€” no markdown, no explanation:
           const m = text.match(/\[[\s\S]*?\]/);
           if (m) candidates = JSON.parse(m[0]);
         } catch {}
-
-        // Filter: valid 11-char IDs, not already in curated list
         const toValidate = candidates
-          .filter(c => c.videoId && /^[a-zA-Z0-9_\-]{11}$/.test(c.videoId) && !existingIds.has(c.videoId))
-          .slice(0, 15);
-
+          .filter((c: any) => c.videoId && /^[a-zA-Z0-9_\-]{11}$/.test(c.videoId) && !existingIds.has(c.videoId))
+          .slice(0, 8);
         if (!toValidate.length) {
-          return of({ items: existingItems, _source: 'curated' });
+          return of(this.buildFallbackResponse(existingItems, query));
         }
-
-        // Validate each via oEmbed
-        const checks = toValidate.map(c =>
+        const checks = toValidate.map((c: any) =>
           this.getOEmbed(c.videoId).pipe(
             map((oe: any) => oe ? {
               id: { videoId: c.videoId },
@@ -357,22 +342,39 @@ Return ONLY a JSON array â€” no markdown, no explanation:
             catchError(() => of(null))
           )
         );
-
         return forkJoin(checks).pipe(
           map((results: any[]) => {
-            const valid = results.filter(r => r !== null);
+            const valid = results.filter((r: any) => r !== null);
             const allItems = [...existingItems, ...valid].slice(0, 12);
-            return {
-              items: allItems,
-              _source: allItems.length > 0 ? 'ai-curated' : 'empty'
-            };
+            if (allItems.length === 0) return this.buildFallbackResponse([], query);
+            return { items: allItems, _source: 'ai-curated' };
           })
         );
       }),
-      catchError(() => of({ items: existingItems, _source: 'curated' }))
+      catchError(() => of(this.buildFallbackResponse(existingItems, query)))
     );
   }
 
+  private buildFallbackResponse(existingItems: any[], query: string): any {
+    if (existingItems.length > 0) {
+      return { items: existingItems, _source: 'curated' };
+    }
+    const topVideos = CURATED_VIDEOS.slice(0, 8).map(v => ({
+      id: { videoId: v.videoId },
+      snippet: {
+        title: v.title,
+        channelTitle: v.channel,
+        description: '',
+        thumbnails: { medium: { url: this.getThumbnail(v.videoId) } }
+      },
+      _source: 'curated-popular'
+    }));
+    return {
+      items: topVideos,
+      _source: 'curated-popular',
+      _fallbackNotice: `No exact results for "${query}". Showing popular educational videos.`
+    };
+  }
   getVideoDetails(videoId: string): Observable<any> {
     const params = { id: videoId, part: 'snippet,statistics,contentDetails' };
     return this.http.get(this.VIDEO_URL, { params }).pipe(
