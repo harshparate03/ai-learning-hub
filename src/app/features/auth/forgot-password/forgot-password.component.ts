@@ -47,20 +47,40 @@ export class ForgotPasswordComponent {
       const otp     = Math.floor(100000 + Math.random() * 900000).toString();
       const expires = Date.now() + 10 * 60 * 1000; // 10 min
 
-      // Send via Vercel serverless function (/api/send-otp)
-      // On local dev this fails silently — OTP is never shown on screen
       let emailSent = false;
+      let emailError = '';
+
       try {
         await this.http.post('/api/send-otp', { email: emailLower, otp }).toPromise();
         emailSent = true;
-      } catch {
-        console.warn('[ForgotPassword] Email API not available (local dev).');
+      } catch (apiErr: any) {
+        const status = apiErr?.status;
+        const errCode = apiErr?.error?.error;
+
+        if (status === 403 && errCode === 'domain_not_verified') {
+          // Resend requires a verified custom domain to send to arbitrary emails
+          emailError = 'Email delivery requires a verified sender domain. Configure RESEND_FROM_EMAIL in Vercel environment variables with a verified domain. Contact the app owner.';
+        } else if (status === 401 || status === 403) {
+          emailError = 'Email service authentication failed. Please contact the app owner.';
+        } else if (status === 429) {
+          emailError = 'Email rate limit reached. Please try again in a few minutes.';
+        } else if (status === 0 || !status) {
+          // Local dev — API not available, proceed silently
+          console.warn('[ForgotPassword] API not reachable (local dev).');
+        } else {
+          emailError = `Email sending failed (${status}). Please try again.`;
+        }
       }
 
-      // Store session (devMode flag recorded but OTP never exposed in UI)
+      if (emailError) {
+        this.errorMsg = emailError;
+        this.loading  = false;
+        return;
+      }
+
+      // Store session (devMode only on local dev without server)
       OtpStore.save({ otp, email: emailLower, expires, attempts: 0, devMode: !emailSent });
 
-      // Navigate to verify page
       this.router.navigate(['/verify-otp'], { queryParams: { email: emailLower } });
     } catch {
       this.errorMsg = 'Something went wrong. Please try again.';

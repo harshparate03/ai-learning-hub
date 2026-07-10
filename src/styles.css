@@ -312,6 +312,27 @@ body {
   z-index: -1; pointer-events: none;
 }
 
+/* Auth logo image (replaces old logo-mark span) */
+.auth-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  margin-bottom: 4px;
+}
+.auth-logo-img {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0 4px 16px rgba(99,102,241,.35));
+  transition: filter .2s, transform .2s;
+}
+.auth-logo:hover .auth-logo-img {
+  filter: drop-shadow(0 6px 22px rgba(99,102,241,.55));
+  transform: translateY(-2px);
+}
+
 /* ── ANIMATIONS ─────────────────────────────────────────── */
 @keyframes fadeInUp { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes fadeIn   { from { opacity: 0; } to { opacity: 1; } }
