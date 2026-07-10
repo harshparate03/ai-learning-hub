@@ -1,9 +1,9 @@
 /**
- * Vercel Serverless Function — POST /api/send-otp
+ * Vercel Serverless Function - POST /api/send-otp
  *
  * Sends a password-reset OTP via the Resend email API.
  *
- * IMPORTANT — Resend free-tier restriction:
+ * IMPORTANT - Resend free-tier restriction:
  *   When using onboarding@resend.dev as the sender (no custom domain),
  *   Resend only delivers to the email address that owns the Resend account.
  *   To send to ANY email, add and verify a custom domain at resend.com/domains,
@@ -25,7 +25,15 @@ export default async function handler(req, res) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Invalid email address' });
   if (!/^\d{6}$/.test(String(otp))) return res.status(400).json({ error: 'OTP must be 6 digits' });
 
-  const RESEND_API_KEY = process.env.RESEND_API_KEY || 're_aQAQYWCW_AugvNvaottur1SF28JTAcE3n';
+  const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+
+  if (!RESEND_API_KEY) {
+    console.error('[send-otp] RESEND_API_KEY is not configured.');
+    return res.status(500).json({
+      error: 'email_service_not_configured',
+      message: 'RESEND_API_KEY is not configured on the server.',
+    });
+  }
 
   // Use custom from-address if domain is verified, else use onboarding@resend.dev
   const FROM = process.env.RESEND_FROM_EMAIL || 'AI Learning Hub <onboarding@resend.dev>';
@@ -40,7 +48,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         from: FROM,
         to: [email],
-        subject: 'Your OTP — AI Learning Hub Password Reset',
+        subject: 'Your OTP - AI Learning Hub Password Reset',
         html: buildEmailHtml(otp),
       }),
     });
@@ -51,20 +59,28 @@ export default async function handler(req, res) {
       console.error('[send-otp] Resend API error:', data);
 
       // Resend returns 403 when sending to unverified recipients without a custom domain
-      if (response.status === 403 || (data.message || '').toLowerCase().includes('domain')) {
+      const resendMessage = data?.message || data?.error || 'Failed to send email';
+      const lowerMessage = String(resendMessage).toLowerCase();
+      if (
+        response.status === 403 ||
+        lowerMessage.includes('domain') ||
+        lowerMessage.includes('verify') ||
+        lowerMessage.includes('testing emails') ||
+        lowerMessage.includes('own email')
+      ) {
         return res.status(403).json({
-          error: 'domain_not_verified',
-          message: 'Email sending requires a verified custom domain in Resend. Add RESEND_FROM_EMAIL env var with your verified domain email.',
+          error: 'resend_sender_not_verified',
+          message: 'Resend rejected this recipient/sender. Verify a custom domain and set RESEND_FROM_EMAIL, or send only to the Resend account email while using onboarding@resend.dev.',
+          providerMessage: resendMessage,
         });
       }
-
-      return res.status(response.status).json({ error: data.message || 'Failed to send email' });
+      return res.status(response.status).json({ error: 'resend_send_failed', message: resendMessage });
     }
 
     return res.status(200).json({ success: true, id: data.id });
   } catch (err) {
     console.error('[send-otp] Unexpected error:', err);
-    return res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'email_send_exception', message: err?.message || 'Internal server error' });
   }
 }
 
@@ -79,7 +95,7 @@ function buildEmailHtml(otp) {
       <!-- Header -->
       <tr>
         <td style="background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:28px 32px;text-align:center;">
-          <div style="display:inline-block;width:52px;height:52px;background:rgba(255,255,255,.15);border-radius:14px;line-height:52px;text-align:center;font-size:26px;">🔐</div>
+          <div style="display:inline-block;width:52px;height:52px;background:rgba(255,255,255,.15);border-radius:14px;line-height:52px;text-align:center;font-size:18px;font-weight:800;color:#fff;">ALH</div>
           <h1 style="color:#fff;margin:12px 0 0;font-size:22px;font-weight:700;letter-spacing:-.02em;">AI Learning Hub</h1>
         </td>
       </tr>
@@ -102,7 +118,7 @@ function buildEmailHtml(otp) {
       <!-- Footer -->
       <tr>
         <td style="background:#0a0f1e;padding:16px 32px;text-align:center;border-top:1px solid rgba(255,255,255,.06);">
-          <p style="color:#475569;font-size:11px;margin:0;">AI Learning Hub · Automated message, do not reply</p>
+          <p style="color:#475569;font-size:11px;margin:0;">AI Learning Hub - Automated message, do not reply</p>
         </td>
       </tr>
     </table>

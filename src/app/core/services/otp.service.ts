@@ -8,7 +8,6 @@ export interface OtpSession {
   expires: number;
   attempts: number;
   verified?: boolean;
-  devMode?: boolean;
 }
 
 const KEY = 'alh_otp_data';

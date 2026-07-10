@@ -20,6 +20,9 @@ export class ForgotPasswordComponent {
   errorMsg   = '';
   successMsg = '';
 
+  private readonly otpApiUrl = this.localOtpApiUrl();
+
+
   constructor(
     private router: Router,
     private http:   HttpClient,
@@ -45,63 +48,68 @@ export class ForgotPasswordComponent {
 
     try {
       const otp     = Math.floor(100000 + Math.random() * 900000).toString();
-      const expires = Date.now() + 10 * 60 * 1000; // 10 min
+      const expires = Date.now() + 10 * 60 * 1000;
+      await this.sendOtp(emailLower, otp);
 
-      // Try to send email via serverless API.
-      // On localhost the API doesn't exist → any error = dev mode, proceed anyway.
-      // On Vercel, only surface errors that are meaningful to the user (auth failures).
-      let emailSent = false;
-
-      try {
-        const response: any = await this.http
-          .post('/api/send-otp', { email: emailLower, otp })
-          .toPromise();
-        emailSent = true;
-        console.log('[ForgotPassword] OTP email sent:', response?.id);
-      } catch (apiErr: any) {
-        const status  = apiErr?.status  as number | undefined;
-        const errCode = apiErr?.error?.error as string | undefined;
-
-        if (status === 401 || status === 403) {
-          if (errCode === 'domain_not_verified') {
-            // Resend requires a verified custom domain to send to arbitrary emails.
-            // Still proceed — the OTP is stored and the user can continue.
-            console.warn('[ForgotPassword] Resend domain not verified — proceeding without email.');
-          } else {
-            // Real auth failure — API key invalid
-            this.errorMsg = 'Email service authentication failed. Please contact the app owner.';
-            this.loading  = false;
-            return;
-          }
-        } else if (status === 429) {
-          this.errorMsg = 'Email rate limit reached. Please wait a minute and try again.';
-          this.loading  = false;
-          return;
-        } else {
-          // status 0 (network error) = localhost with no server
-          // status 404 = API route not deployed yet
-          // status 500 = serverless function crash
-          // → In all these cases: dev/preview environment. Proceed silently.
-          console.warn(`[ForgotPassword] Email API unavailable (status ${status ?? 'none'}) — proceeding in local mode.`);
-        }
-      }
-
-      // Save OTP session (devMode = email was not actually sent)
       OtpStore.save({
         otp,
         email:    emailLower,
         expires,
         attempts: 0,
-        devMode:  !emailSent,
       });
 
-      // Always navigate to verify page regardless of email delivery
       this.router.navigate(['/verify-otp'], { queryParams: { email: emailLower } });
-
-    } catch {
-      this.errorMsg = 'Something went wrong. Please try again.';
+    } catch (err: any) {
+      this.errorMsg = this.otpErrorMessage(err);
     } finally {
       this.loading = false;
     }
+  }
+
+  private async sendOtp(email: string, otp: string): Promise<void> {
+    await this.http.post(this.otpApiUrl, { email, otp }).toPromise();
+  }
+
+  private localOtpApiUrl(): string {
+    if (typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)) {
+      return 'http://localhost:3001/api/send-otp';
+    }
+    return '/api/send-otp';
+  }
+
+  private otpErrorMessage(err: any): string {
+    const status = err?.status as number | undefined;
+    const code = err?.error?.error as string | undefined;
+    const message = err?.error?.message || err?.error?.error || err?.message || '';
+    const lowerMessage = String(message).toLowerCase();
+
+    if (code === 'email_service_not_configured') {
+      return 'Password reset email is not configured on the server. Please contact the app owner.';
+    }
+    if (
+      code === 'domain_not_verified' ||
+      code === 'resend_sender_not_verified' ||
+      lowerMessage.includes('testing emails') ||
+      lowerMessage.includes('verify a domain') ||
+      lowerMessage.includes('own email address')
+    ) {
+      return 'Email OTP is not enabled for this recipient yet. Verify a domain in Resend, set RESEND_FROM_EMAIL, then redeploy.';
+    }
+    if (status === 401 || status === 403) {
+      return 'Email service authentication failed. Please contact the app owner.';
+    }
+    if (status === 429) {
+      return 'Email rate limit reached. Please wait a minute and try again.';
+    }
+    if (status === 0) {
+      return 'Local email API is not running. Start the app with npm start, or run npm run proxy with ng serve.';
+    }
+    if (status === 404) {
+      return 'Email API route was not found. On localhost, start npm start. On Vercel, redeploy after adding the api/send-otp.js function.';
+    }
+    if (status === 400) {
+      return message || 'Invalid password reset request. Please check the email and try again.';
+    }
+    return message || 'Could not send the password reset email. Please try again later.';
   }
 }
