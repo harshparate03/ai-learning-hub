@@ -28,8 +28,8 @@ export default async function handler(req, res) {
 
 async function sendViaGmail({ user, pass, fromName, to, otp }) {
   const messageId = `<otp-${Date.now()}-${Math.random().toString(36).slice(2)}@ai-learning-hub>`;
-  const subject = 'Your OTP - AI Learning Hub Password Reset';
-  const body = `Your AI Learning Hub password reset OTP is ${otp}. It expires in 10 minutes.`;
+  const subject = 'AI Learning Hub password reset code';
+  const body = `Your password reset code is ${otp}. It expires in 10 minutes. If you did not request this, no action is needed.`;
   const safeName = String(fromName).replace(/["\r\n]/g, '').trim() || 'AI Learning Hub';
   const mime = [`From: "${safeName}" <${user}>`, `To: <${to}>`, `Subject: ${subject}`, `Message-ID: ${messageId}`, 'MIME-Version: 1.0', 'Content-Type: text/plain; charset=UTF-8', '', body].join('\r\n');
   await smtpSend({ user, pass, to, mime });

@@ -246,10 +246,10 @@ async function sendViaResend(email, otp) {
 }
 
 async function sendViaGmail(email, otp) {
-  const subject = 'Your OTP - AI Learning Hub Password Reset';
+  const subject = 'AI Learning Hub password reset code';
   const messageId = `<otp-${Date.now()}-${Math.random().toString(36).slice(2)}@ai-learning-hub>`;
   const html = buildOtpEmailHtml(otp);
-  const text = `Your AI Learning Hub password reset OTP is ${otp}. It expires in 10 minutes.`;
+  const text = `Your password reset code is ${otp}. It expires in 10 minutes. If you did not request this, no action is needed.`;
 
   const mime = [
     `From: ${formatAddress(GMAIL_FROM_NAME, GMAIL_USER)}`,
