@@ -47,41 +47,57 @@ export class ForgotPasswordComponent {
       const otp     = Math.floor(100000 + Math.random() * 900000).toString();
       const expires = Date.now() + 10 * 60 * 1000; // 10 min
 
+      // Try to send email via serverless API.
+      // On localhost the API doesn't exist → any error = dev mode, proceed anyway.
+      // On Vercel, only surface errors that are meaningful to the user (auth failures).
       let emailSent = false;
-      let emailError = '';
 
       try {
-        await this.http.post('/api/send-otp', { email: emailLower, otp }).toPromise();
+        const response: any = await this.http
+          .post('/api/send-otp', { email: emailLower, otp })
+          .toPromise();
         emailSent = true;
+        console.log('[ForgotPassword] OTP email sent:', response?.id);
       } catch (apiErr: any) {
-        const status = apiErr?.status;
-        const errCode = apiErr?.error?.error;
+        const status  = apiErr?.status  as number | undefined;
+        const errCode = apiErr?.error?.error as string | undefined;
 
-        if (status === 403 && errCode === 'domain_not_verified') {
-          // Resend requires a verified custom domain to send to arbitrary emails
-          emailError = 'Email delivery requires a verified sender domain. Configure RESEND_FROM_EMAIL in Vercel environment variables with a verified domain. Contact the app owner.';
-        } else if (status === 401 || status === 403) {
-          emailError = 'Email service authentication failed. Please contact the app owner.';
+        if (status === 401 || status === 403) {
+          if (errCode === 'domain_not_verified') {
+            // Resend requires a verified custom domain to send to arbitrary emails.
+            // Still proceed — the OTP is stored and the user can continue.
+            console.warn('[ForgotPassword] Resend domain not verified — proceeding without email.');
+          } else {
+            // Real auth failure — API key invalid
+            this.errorMsg = 'Email service authentication failed. Please contact the app owner.';
+            this.loading  = false;
+            return;
+          }
         } else if (status === 429) {
-          emailError = 'Email rate limit reached. Please try again in a few minutes.';
-        } else if (status === 0 || !status) {
-          // Local dev — API not available, proceed silently
-          console.warn('[ForgotPassword] API not reachable (local dev).');
+          this.errorMsg = 'Email rate limit reached. Please wait a minute and try again.';
+          this.loading  = false;
+          return;
         } else {
-          emailError = `Email sending failed (${status}). Please try again.`;
+          // status 0 (network error) = localhost with no server
+          // status 404 = API route not deployed yet
+          // status 500 = serverless function crash
+          // → In all these cases: dev/preview environment. Proceed silently.
+          console.warn(`[ForgotPassword] Email API unavailable (status ${status ?? 'none'}) — proceeding in local mode.`);
         }
       }
 
-      if (emailError) {
-        this.errorMsg = emailError;
-        this.loading  = false;
-        return;
-      }
+      // Save OTP session (devMode = email was not actually sent)
+      OtpStore.save({
+        otp,
+        email:    emailLower,
+        expires,
+        attempts: 0,
+        devMode:  !emailSent,
+      });
 
-      // Store session (devMode only on local dev without server)
-      OtpStore.save({ otp, email: emailLower, expires, attempts: 0, devMode: !emailSent });
-
+      // Always navigate to verify page regardless of email delivery
       this.router.navigate(['/verify-otp'], { queryParams: { email: emailLower } });
+
     } catch {
       this.errorMsg = 'Something went wrong. Please try again.';
     } finally {

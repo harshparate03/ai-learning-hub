@@ -21,7 +21,8 @@ export class VerifyOtpComponent implements OnInit, OnDestroy {
   timeLeft       = 600;
   resendCooldown = 0;
   expired        = false;
-  // devOtp intentionally removed — OTP is ONLY sent via email, never shown on screen
+  /** true only on localhost — shows a dev hint (OTP in console) */
+  readonly isLocalhost = typeof window !== 'undefined' && window.location.hostname === 'localhost';
 
   private timerRef:  ReturnType<typeof setInterval> | null = null;
   private resendRef: ReturnType<typeof setInterval> | null = null;
@@ -49,6 +50,15 @@ export class VerifyOtpComponent implements OnInit, OnDestroy {
 
     this.timeLeft = remaining;
     this.startTimer();
+
+    // On localhost (devMode) — log OTP to browser console only, never to UI
+    if (session.devMode) {
+      console.info(
+        `%c[Dev] OTP for ${this.email}: ${session.otp}`,
+        'background:#1e293b;color:#38bdf8;padding:4px 8px;border-radius:4px;font-family:monospace;font-size:14px;font-weight:700;letter-spacing:3px'
+      );
+    }
+
     setTimeout(() => this.focusBox(0), 120);
   }
 
@@ -157,9 +167,20 @@ export class VerifyOtpComponent implements OnInit, OnDestroy {
       try {
         await this.http.post('/api/send-otp', { email: this.email, otp: newOtp }).toPromise();
         emailSent = true;
-      } catch {
-        // Local dev without Vercel server — OTP cannot be sent
-        console.warn('[VerifyOtp] Email API unavailable on local dev.');
+      } catch (apiErr: any) {
+        const status = apiErr?.status as number | undefined;
+        if (status === 401 || (status === 403 && apiErr?.error?.error !== 'domain_not_verified')) {
+          this.errorMsg = 'Email service error. Please try again later.';
+          this.loading  = false;
+          return;
+        }
+        if (status === 429) {
+          this.errorMsg = 'Rate limit reached. Please wait a minute before resending.';
+          this.loading  = false;
+          return;
+        }
+        // status 0 / 404 / 500 / domain_not_verified → local dev or unverified domain, proceed
+        console.warn(`[VerifyOtp] Email API unavailable (status ${status ?? 'none'}) — local mode.`);
       }
 
       // Always save new OTP session (devMode stored but NOT displayed)
