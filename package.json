@@ -6,7 +6,7 @@
     "start": "node scripts/start-with-proxy.js",
     "start:app": "node scripts/sync-local-env.js && ng serve",
     "dev": "node scripts/start-with-proxy.js",
-    "proxy": "node --use-system-ca api-proxy.js",
+    "proxy": "node scripts/start-api-proxy.js",
     "build": "ng build --configuration production",
     "build:dev": "ng build --configuration development",
     "watch": "ng build --watch --configuration development",

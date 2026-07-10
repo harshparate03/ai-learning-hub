@@ -1,5 +1,6 @@
 const { spawn } = require('child_process');
 const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const root = path.join(__dirname, '..');
 const isWin = process.platform === 'win32';
