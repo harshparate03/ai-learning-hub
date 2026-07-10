@@ -119,6 +119,19 @@ export class AuthService {
   }
 
   /**
+   * Verify that the supplied plain-text password matches the stored hash.
+   * Used by Change Password to confirm the current password before updating.
+   */
+  verifyPassword(email: string, password: string): boolean {
+    const emailLower = sanitizeEmail(email);
+    const safePass   = sanitizeUserInput(password, MAX_PASSWORD_LEN);
+    if (!emailLower || !safePass) return false;
+    return this.getUsers().some(
+      u => u.email === emailLower && u.passwordHash === this.hash(safePass)
+    );
+  }
+
+  /**
    * Reset a user's password after OTP verification.
    * Finds the account by email and overwrites the stored password hash.
    */

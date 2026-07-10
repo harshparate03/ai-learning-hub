@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, ActivatedRoute, RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
-import { lastValueFrom } from 'rxjs';
+import { OtpStore } from '../../../core/services/otp.service';
 
 @Component({
   selector: 'app-verify-otp',
@@ -13,216 +13,192 @@ import { lastValueFrom } from 'rxjs';
   styleUrl: './verify-otp.component.css',
 })
 export class VerifyOtpComponent implements OnInit, OnDestroy {
-  email = '';
-  digits: string[] = ['', '', '', '', '', ''];
-  loading = false;
-  errorMsg = '';
-  successMsg = '';
-  timeLeft = 600; // 10 minutes
-  resendCooldown = 0;
-  expired = false;
-  /** Show OTP in dev mode when email API is unavailable */
-  devOtp = '';
+  email         = '';
+  digits        = ['', '', '', '', '', ''];
+  loading       = false;
+  errorMsg      = '';
+  successMsg    = '';
+  timeLeft      = 600;   // seconds
+  resendCooldown= 0;
+  expired       = false;
+  devOtp        = '';    // shown only when email send failed
 
-  private timerInterval: ReturnType<typeof setInterval> | null = null;
-  private resendTimerInterval: ReturnType<typeof setInterval> | null = null;
+  private timerRef:  ReturnType<typeof setInterval> | null = null;
+  private resendRef: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private router: Router,
-    private route: ActivatedRoute,
-    private http: HttpClient,
+    private route:  ActivatedRoute,
+    private http:   HttpClient,
   ) {}
 
   ngOnInit() {
     this.email = this.route.snapshot.queryParams['email'] || '';
 
-    const raw = sessionStorage.getItem('alh_otp_data');
-    if (!raw) {
+    const session = OtpStore.load();
+
+    if (!session) {
       this.router.navigate(['/forgot-password']);
       return;
     }
 
-    try {
-      const data = JSON.parse(atob(raw));
-
-      if (data.email !== this.email) {
-        this.router.navigate(['/forgot-password']);
-        return;
-      }
-
-      const remaining = Math.floor((data.expires - Date.now()) / 1000);
-      if (remaining <= 0) {
-        this.expired = true;
-        this.timeLeft = 0;
-        this.errorMsg = 'OTP has expired. Please request a new one.';
-        return;
-      }
-
-      this.timeLeft = remaining;
-
-      // Dev mode: show OTP directly if email could not be sent
-      if (data.devMode) {
-        this.devOtp = data.otp;
-      }
-    } catch {
+    // Email mismatch guard
+    if (session.email !== this.email) {
       this.router.navigate(['/forgot-password']);
       return;
     }
+
+    const remaining = Math.floor((session.expires - Date.now()) / 1000);
+    if (remaining <= 0) {
+      this.expired  = true;
+      this.timeLeft = 0;
+      this.errorMsg = 'OTP has expired. Please request a new one.';
+      return;
+    }
+
+    this.timeLeft = remaining;
+    if (session.devMode) this.devOtp = session.otp;
 
     this.startTimer();
-    setTimeout(() => (document.getElementById('otp-0') as HTMLInputElement)?.focus(), 100);
+    setTimeout(() => this.focusBox(0), 120);
   }
 
   ngOnDestroy() {
-    if (this.timerInterval) clearInterval(this.timerInterval);
-    if (this.resendTimerInterval) clearInterval(this.resendTimerInterval);
+    if (this.timerRef)  clearInterval(this.timerRef);
+    if (this.resendRef) clearInterval(this.resendRef);
   }
 
+  // ── Timer ────────────────────────────────────────────────
   private startTimer() {
-    if (this.timerInterval) clearInterval(this.timerInterval);
-    this.timerInterval = setInterval(() => {
+    if (this.timerRef) clearInterval(this.timerRef);
+    this.timerRef = setInterval(() => {
       this.timeLeft = Math.max(0, this.timeLeft - 1);
       if (this.timeLeft === 0) {
-        clearInterval(this.timerInterval!);
-        this.expired = true;
+        clearInterval(this.timerRef!);
+        this.expired  = true;
         this.errorMsg = 'OTP has expired. Please request a new one.';
       }
     }, 1000);
   }
 
-  formatTime(seconds: number): string {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}:${s.toString().padStart(2, '0')}`;
+  formatTime(s: number) {
+    const m = Math.floor(s / 60);
+    return `${m}:${(s % 60).toString().padStart(2, '0')}`;
   }
 
-  onDigitInput(event: Event, index: number) {
-    const input = event.target as HTMLInputElement;
-    const val = input.value.replace(/\D/g, '').slice(-1);
-    this.digits[index] = val;
-    input.value = val;
-    if (val && index < 5) {
-      (document.getElementById(`otp-${index + 1}`) as HTMLInputElement)?.focus();
-    }
+  // ── Input handling ───────────────────────────────────────
+  onDigitInput(event: Event, i: number) {
+    const el  = event.target as HTMLInputElement;
+    const val = el.value.replace(/\D/g, '').slice(-1);
+    this.digits[i] = val;
+    el.value = val;
+    if (val && i < 5) this.focusBox(i + 1);
+    // Auto-verify when all 6 filled
+    if (this.digits.join('').length === 6) this.onVerify();
   }
 
-  onKeyDown(event: KeyboardEvent, index: number) {
-    if (event.key === 'Backspace' && !this.digits[index] && index > 0) {
-      (document.getElementById(`otp-${index - 1}`) as HTMLInputElement)?.focus();
+  onKeyDown(event: KeyboardEvent, i: number) {
+    if (event.key === 'Backspace' && !this.digits[i] && i > 0) {
+      this.digits[i - 1] = '';
+      this.focusBox(i - 1);
     }
   }
 
   onPaste(event: ClipboardEvent) {
     event.preventDefault();
-    const paste = event.clipboardData?.getData('text')?.replace(/\D/g, '').slice(0, 6) || '';
-    paste.split('').forEach((ch, i) => {
-      if (i < 6) this.digits[i] = ch;
-    });
-    const lastFilled = Math.min(paste.length, 5);
-    setTimeout(() => (document.getElementById(`otp-${lastFilled}`) as HTMLInputElement)?.focus(), 0);
+    const text = event.clipboardData?.getData('text')?.replace(/\D/g, '').slice(0, 6) || '';
+    text.split('').forEach((ch, idx) => { this.digits[idx] = ch; });
+    const last = Math.min(text.length, 5);
+    setTimeout(() => this.focusBox(last), 0);
+    if (text.length === 6) setTimeout(() => this.onVerify(), 80);
   }
 
+  private focusBox(i: number) {
+    (document.getElementById(`otp-${i}`) as HTMLInputElement)?.focus();
+  }
+
+  // ── Verify ───────────────────────────────────────────────
   onVerify() {
     this.errorMsg = '';
     const entered = this.digits.join('');
-    if (entered.length !== 6) return;
+    if (entered.length !== 6 || this.expired || this.successMsg) return;
 
-    const raw = sessionStorage.getItem('alh_otp_data');
-    if (!raw) {
-      this.errorMsg = 'Session expired. Please restart the password reset flow.';
+    const session = OtpStore.load();
+    if (!session) {
+      this.errorMsg = 'Session expired. Please start over.';
       return;
     }
 
-    let data: any;
-    try {
-      data = JSON.parse(atob(raw));
-    } catch {
-      this.errorMsg = 'Invalid session. Please restart.';
-      return;
-    }
-
-    // Expiry check
-    if (Date.now() > data.expires) {
-      this.expired = true;
+    if (Date.now() > session.expires) {
+      this.expired  = true;
       this.errorMsg = 'OTP has expired. Please request a new one.';
       return;
     }
 
-    // Attempt limiting (max 5 attempts)
-    data.attempts = (data.attempts || 0) + 1;
-    if (data.attempts > 5) {
-      sessionStorage.removeItem('alh_otp_data');
+    // Increment attempt counter
+    const attempts = (session.attempts || 0) + 1;
+    if (attempts > 5) {
+      OtpStore.clear();
       this.errorMsg = 'Too many incorrect attempts. Please request a new OTP.';
       return;
     }
 
-    if (entered !== data.otp) {
-      // Persist updated attempt count
-      sessionStorage.setItem('alh_otp_data', btoa(JSON.stringify(data)));
-      this.errorMsg = `Incorrect OTP. ${5 - data.attempts} attempt${5 - data.attempts === 1 ? '' : 's'} remaining.`;
+    if (entered !== session.otp) {
+      OtpStore.update({ attempts });
+      const left = 5 - attempts;
+      this.errorMsg = `Incorrect OTP — ${left} attempt${left === 1 ? '' : 's'} remaining.`;
+      // Shake the boxes
+      this.digits = ['', '', '', '', '', ''];
+      setTimeout(() => this.focusBox(0), 50);
       return;
     }
 
-    // ✓ Verified — mark as verified so reset-password page can proceed
-    data.verified = true;
-    sessionStorage.setItem('alh_otp_data', btoa(JSON.stringify(data)));
-
-    this.successMsg = 'OTP verified! Redirecting...';
+    // ✓ Correct
+    OtpStore.update({ verified: true });
+    this.successMsg = '✓ OTP verified! Redirecting...';
     setTimeout(() => {
-      this.router.navigate(['/reset-password'], {
-        queryParams: { email: this.email },
-      });
+      this.router.navigate(['/reset-password'], { queryParams: { email: this.email } });
     }, 900);
   }
 
+  // ── Resend ───────────────────────────────────────────────
   async resendOtp() {
-    if (this.resendCooldown > 0) return;
-    this.errorMsg = '';
+    if (this.resendCooldown > 0 || this.loading) return;
+    this.errorMsg  = '';
     this.successMsg = '';
-    this.loading = true;
+    this.loading   = true;
 
     try {
-      const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
-      const expires = Date.now() + 10 * 60 * 1000;
+      const newOtp   = Math.floor(100000 + Math.random() * 900000).toString();
+      const expires  = Date.now() + 10 * 60 * 1000;
 
       let emailSent = false;
       try {
-        await lastValueFrom(
-          this.http.post('/api/send-otp', { email: this.email, otp: newOtp }),
-        );
+        await this.http.post('/api/send-otp', { email: this.email, otp: newOtp }).toPromise();
         emailSent = true;
       } catch {
         console.warn('[VerifyOtp] Email API unavailable — dev mode resend');
       }
 
-      const otpData = {
-        otp: newOtp,
-        email: this.email,
-        expires,
-        attempts: 0,
-        devMode: !emailSent,
-      };
-      sessionStorage.setItem('alh_otp_data', btoa(JSON.stringify(otpData)));
+      OtpStore.save({ otp: newOtp, email: this.email, expires, attempts: 0, devMode: !emailSent });
 
-      this.devOtp = !emailSent ? newOtp : '';
-      this.digits = ['', '', '', '', '', ''];
-      this.expired = false;
-      this.timeLeft = 600;
+      this.devOtp    = !emailSent ? newOtp : '';
+      this.digits    = ['', '', '', '', '', ''];
+      this.expired   = false;
+      this.timeLeft  = 600;
       this.startTimer();
 
-      this.successMsg = emailSent
-        ? 'New OTP sent to your email.'
-        : 'New OTP generated (shown below — email unavailable in dev mode).';
+      this.successMsg = emailSent ? 'New OTP sent to your email.' : 'New OTP generated (shown in the box below).';
 
-      // 60-second resend cooldown
+      // 60-second cooldown
       this.resendCooldown = 60;
-      if (this.resendTimerInterval) clearInterval(this.resendTimerInterval);
-      this.resendTimerInterval = setInterval(() => {
+      if (this.resendRef) clearInterval(this.resendRef);
+      this.resendRef = setInterval(() => {
         this.resendCooldown = Math.max(0, this.resendCooldown - 1);
-        if (this.resendCooldown === 0) clearInterval(this.resendTimerInterval!);
+        if (this.resendCooldown === 0) clearInterval(this.resendRef!);
       }, 1000);
 
-      setTimeout(() => (document.getElementById('otp-0') as HTMLInputElement)?.focus(), 100);
+      setTimeout(() => this.focusBox(0), 100);
     } catch {
       this.errorMsg = 'Could not resend OTP. Please try again.';
     } finally {

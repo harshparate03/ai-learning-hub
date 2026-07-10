@@ -11,6 +11,7 @@ import { SignupComponent } from './features/auth/signup/signup.component';
 import { ForgotPasswordComponent } from './features/auth/forgot-password/forgot-password.component';
 import { VerifyOtpComponent } from './features/auth/verify-otp/verify-otp.component';
 import { ResetPasswordComponent } from './features/auth/reset-password/reset-password.component';
+import { ChangePasswordComponent } from './features/auth/change-password/change-password.component';
 import { NotFoundComponent } from './features/not-found/not-found.component';
 import { authGuard } from './core/guards/auth.guard';
 
@@ -19,9 +20,12 @@ export const routes: Routes = [
   { path: '',               component: HomeComponent },   // Home is PUBLIC
   { path: 'login',          component: LoginComponent },
   { path: 'signup',         component: SignupComponent },
-  { path: 'forgot-password',component: ForgotPasswordComponent },
-  { path: 'verify-otp',     component: VerifyOtpComponent },
-  { path: 'reset-password', component: ResetPasswordComponent },
+  { path: 'forgot-password',  component: ForgotPasswordComponent },
+  { path: 'verify-otp',      component: VerifyOtpComponent },
+  { path: 'reset-password',  component: ResetPasswordComponent },
+
+  // ── Protected feature routes ──────────────────────────
+  { path: 'change-password', component: ChangePasswordComponent, canActivate: [authGuard] },
 
   // ── Protected feature routes ──────────────────────────
   { path: 'mindmap',           component: GenerateComponent, canActivate: [authGuard] },

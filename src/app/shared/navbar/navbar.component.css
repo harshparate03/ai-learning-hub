@@ -254,3 +254,71 @@
     max-width: 140px;
   }
 }
+
+/* ── User dropdown ──────────────────────────────────────── */
+.user-chip {
+  position: relative;
+  user-select: none;
+}
+.user-chip.active {
+  background: rgba(99,102,241,.14);
+  border-color: rgba(99,102,241,.4);
+}
+
+.user-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 190px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: 0 12px 36px rgba(0,0,0,.32);
+  padding: 6px;
+  z-index: 9999;
+  animation: fadeIn .14s ease;
+}
+
+.user-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-decoration: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background .13s, color .13s;
+  text-align: left;
+}
+.user-menu-item:hover {
+  background: rgba(99,102,241,.09);
+  color: var(--text-primary);
+}
+
+.user-menu-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 4px 6px;
+}
+
+.user-menu-logout {
+  color: var(--red-400, #f87171);
+}
+.user-menu-logout:hover {
+  background: rgba(248,113,113,.09);
+  color: #f87171;
+}
+
+/* Mobile — show Change Password and Sign Out inside mobile nav */
+.mobile-nav .user-dropdown-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+}
