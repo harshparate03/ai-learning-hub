@@ -118,6 +118,24 @@ export class AuthService {
     localStorage.removeItem(KEYS.sessionExpires);
   }
 
+  /**
+   * Reset a user's password after OTP verification.
+   * Finds the account by email and overwrites the stored password hash.
+   */
+  resetPassword(email: string, newPassword: string): boolean {
+    const emailLower = sanitizeEmail(email);
+    const safePass   = sanitizeUserInput(newPassword, MAX_PASSWORD_LEN);
+    if (!isValidEmail(emailLower) || safePass.length < MIN_PASSWORD_LEN) return false;
+
+    const users = this.getUsers();
+    const user  = users.find(u => u.email === emailLower);
+    if (!user) return false;
+
+    user.passwordHash = this.hash(safePass);
+    this.saveUsers(users);
+    return true;
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   /** Write / overwrite session keys */

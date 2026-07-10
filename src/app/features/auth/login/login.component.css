@@ -202,3 +202,16 @@
 }
 
 .auth-switch-link:hover { opacity: .78; }
+
+/* Forgot password link */
+.forgot-link {
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--grad-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-decoration: none;
+  transition: opacity .14s;
+}
+.forgot-link:hover { opacity: .72; }

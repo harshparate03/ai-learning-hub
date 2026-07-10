@@ -8,14 +8,20 @@ import { HistoryComponent } from './features/summarizer/history/history.componen
 import { ChatPdfComponent } from './features/summarizer/chat-pdf/chat-pdf.component';
 import { LoginComponent } from './features/auth/login/login.component';
 import { SignupComponent } from './features/auth/signup/signup.component';
+import { ForgotPasswordComponent } from './features/auth/forgot-password/forgot-password.component';
+import { VerifyOtpComponent } from './features/auth/verify-otp/verify-otp.component';
+import { ResetPasswordComponent } from './features/auth/reset-password/reset-password.component';
 import { NotFoundComponent } from './features/not-found/not-found.component';
 import { authGuard } from './core/guards/auth.guard';
 
 export const routes: Routes = [
   // ── Public routes (no auth required) ─────────────────
-  { path: '',       component: HomeComponent },   // Home is PUBLIC
-  { path: 'login',  component: LoginComponent },
-  { path: 'signup', component: SignupComponent },
+  { path: '',               component: HomeComponent },   // Home is PUBLIC
+  { path: 'login',          component: LoginComponent },
+  { path: 'signup',         component: SignupComponent },
+  { path: 'forgot-password',component: ForgotPasswordComponent },
+  { path: 'verify-otp',     component: VerifyOtpComponent },
+  { path: 'reset-password', component: ResetPasswordComponent },
 
   // ── Protected feature routes ──────────────────────────
   { path: 'mindmap',           component: GenerateComponent, canActivate: [authGuard] },
