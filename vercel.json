@@ -3,11 +3,6 @@
   "outputDirectory": "dist/ai-learning-hub/browser",
   "installCommand": "npm install --legacy-peer-deps",
   "framework": null,
-  "functions": {
-    "api/*.js": {
-      "runtime": "nodejs20.x"
-    }
-  },
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
