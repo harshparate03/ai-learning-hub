@@ -3,6 +3,7 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const express = require('express');
 const cors = require('cors');
+const tls = require('tls');
 
 const app = express();
 const PORT = process.env.API_PROXY_PORT || 3001;
@@ -12,6 +13,9 @@ const GROQ_API_KEY = process.env.GROQ_API_KEY || 'GROQ_API_KEY_PLACEHOLDER';
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || '';
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'AI Learning Hub <onboarding@resend.dev>';
+const GMAIL_USER = process.env.GMAIL_USER || '';
+const GMAIL_APP_PASSWORD = (process.env.GMAIL_APP_PASSWORD || '').replace(/\\s+/g, '');
+const GMAIL_FROM_NAME = process.env.GMAIL_FROM_NAME || 'AI Learning Hub';
 const MAX_GROQ_OUTPUT_TOKENS = 3072;
 
 // Middleware
@@ -176,56 +180,188 @@ app.post('/api/send-otp', async (req, res) => {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Invalid email address' });
     if (!/^\d{6}$/.test(String(otp))) return res.status(400).json({ error: 'OTP must be 6 digits' });
 
-    if (!RESEND_API_KEY) {
-      console.error('[send-otp] RESEND_API_KEY is not configured.');
-      return res.status(500).json({
-        error: 'email_service_not_configured',
-        message: 'RESEND_API_KEY is not configured on the local API proxy.',
-      });
+    if (GMAIL_USER && GMAIL_APP_PASSWORD) {
+      const id = await sendViaGmail(email, otp);
+      return res.json({ success: true, provider: 'gmail', id });
     }
 
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: RESEND_FROM_EMAIL,
-        to: [email],
-        subject: 'Your OTP - AI Learning Hub Password Reset',
-        html: buildOtpEmailHtml(otp),
-      }),
+    if (RESEND_API_KEY) {
+      const result = await sendViaResend(email, otp);
+      return res.json({ success: true, provider: 'resend', id: result.id });
+    }
+
+    return res.status(500).json({
+      error: 'email_service_not_configured',
+      message: 'Configure GMAIL_USER and GMAIL_APP_PASSWORD, or configure RESEND_API_KEY with a verified sender domain.',
     });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error('[send-otp] Resend API error:', data);
-      const resendMessage = data?.message || data?.error || 'Failed to send email';
-      const lowerMessage = String(resendMessage).toLowerCase();
-      if (
-        response.status === 403 ||
-        lowerMessage.includes('domain') ||
-        lowerMessage.includes('verify') ||
-        lowerMessage.includes('testing emails') ||
-        lowerMessage.includes('own email')
-      ) {
-        return res.status(403).json({
-          error: 'resend_sender_not_verified',
-          message: 'Resend rejected this recipient/sender. Verify a custom domain and set RESEND_FROM_EMAIL, or send only to the Resend account email while using onboarding@resend.dev.',
-          providerMessage: resendMessage,
-        });
-      }
-      return res.status(response.status).json({ error: 'resend_send_failed', message: resendMessage });
-    }
-
-    res.json({ success: true, id: data.id });
   } catch (err) {
-    console.error('[send-otp] Unexpected error:', err.message);
-    res.status(500).json({ error: 'email_send_exception', message: err?.message || 'Internal server error' });
+    console.error('[send-otp] Email send error:', err.message || err);
+    res.status(err?.status || 500).json({
+      error: err?.code || 'email_send_exception',
+      message: err?.message || 'Internal server error',
+      providerMessage: err?.providerMessage,
+    });
   }
 });
+
+async function sendViaResend(email, otp) {
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: RESEND_FROM_EMAIL,
+      to: [email],
+      subject: 'Your OTP - AI Learning Hub Password Reset',
+      html: buildOtpEmailHtml(otp),
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    console.error('[send-otp] Resend API error:', data);
+    const resendMessage = data?.message || data?.error || 'Failed to send email';
+    const lowerMessage = String(resendMessage).toLowerCase();
+    if (
+      response.status === 403 ||
+      lowerMessage.includes('domain') ||
+      lowerMessage.includes('verify') ||
+      lowerMessage.includes('testing emails') ||
+      lowerMessage.includes('own email')
+    ) {
+      throw {
+        status: 403,
+        code: 'resend_sender_not_verified',
+        message: 'Resend rejected this recipient/sender. Use Gmail SMTP without a domain, or verify a custom domain for Resend.',
+        providerMessage: resendMessage,
+      };
+    }
+    throw { status: response.status, code: 'resend_send_failed', message: resendMessage };
+  }
+
+  return data;
+}
+
+async function sendViaGmail(email, otp) {
+  const subject = 'Your OTP - AI Learning Hub Password Reset';
+  const messageId = `<otp-${Date.now()}-${Math.random().toString(36).slice(2)}@ai-learning-hub>`;
+  const html = buildOtpEmailHtml(otp);
+  const text = `Your AI Learning Hub password reset OTP is ${otp}. It expires in 10 minutes.`;
+
+  const mime = [
+    `From: ${formatAddress(GMAIL_FROM_NAME, GMAIL_USER)}`,
+    `To: <${email}>`,
+    `Subject: ${subject}`,
+    `Message-ID: ${messageId}`,
+    'MIME-Version: 1.0',
+    'Content-Type: multipart/alternative; boundary="alh_otp_boundary"',
+    '',
+    '--alh_otp_boundary',
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: 7bit',
+    '',
+    text,
+    '',
+    '--alh_otp_boundary',
+    'Content-Type: text/html; charset=UTF-8',
+    'Content-Transfer-Encoding: 7bit',
+    '',
+    html,
+    '',
+    '--alh_otp_boundary--',
+    '',
+  ].join('\r\n');
+
+  await smtpSend({ user: GMAIL_USER, pass: GMAIL_APP_PASSWORD, to: email, mime });
+  return messageId;
+}
+
+function formatAddress(name, email) {
+  const safeName = String(name).replace(/["\r\n]/g, '').trim() || 'AI Learning Hub';
+  return `"${safeName}" <${email}>`;
+}
+
+function smtpSend({ user, pass, to, mime }) {
+  return new Promise((resolve, reject) => {
+    const socket = tls.connect(465, 'smtp.gmail.com', { servername: 'smtp.gmail.com' });
+    let buffer = '';
+    let pending = [];
+    let settled = false;
+
+    const fail = (message) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      reject({ status: 500, code: 'gmail_smtp_failed', message });
+    };
+
+    const send = (line) => socket.write(`${line}\r\n`);
+    const read = () => new Promise((resolveRead) => pending.push({ resolve: resolveRead }));
+
+    const flush = () => {
+      while (pending.length) {
+        const response = nextSmtpResponse();
+        if (!response) return;
+        pending.shift().resolve(response);
+      }
+    };
+
+    const nextSmtpResponse = () => {
+      const lines = buffer.split(/\r?\n/);
+      let consumed = 0;
+      let collected = [];
+      for (const line of lines) {
+        if (!line) break;
+        collected.push(line);
+        consumed += line.length + 2;
+        if (/^\d{3} /.test(line)) {
+          buffer = buffer.slice(consumed);
+          return collected.join('\n');
+        }
+      }
+      return null;
+    };
+
+    const expect = async (prefix) => {
+      const response = await read();
+      if (!response.startsWith(prefix)) throw new Error(response);
+      return response;
+    };
+
+    socket.setTimeout(30000, () => fail('Gmail SMTP timed out.'));
+    socket.on('error', (err) => fail(err.message));
+    socket.on('data', (chunk) => {
+      buffer += chunk.toString('utf8');
+      flush();
+    });
+    socket.on('secureConnect', async () => {
+      try {
+        await expect('220');
+        send('EHLO ai-learning-hub');
+        await expect('250');
+        send(`AUTH PLAIN ${Buffer.from(`\0${user}\0${pass}`).toString('base64')}`);
+        await expect('235');
+        send(`MAIL FROM:<${user}>`);
+        await expect('250');
+        send(`RCPT TO:<${to}>`);
+        await expect('250');
+        send('DATA');
+        await expect('354');
+        send(`${mime.replace(/\r?\n\./g, '\r\n..')}\r\n.`);
+        await expect('250');
+        send('QUIT');
+        settled = true;
+        socket.end();
+        resolve();
+      } catch (err) {
+        fail(`Gmail SMTP rejected the email: ${err.message}`);
+      }
+    });
+  });
+}
 
 function buildOtpEmailHtml(otp) {
   return `<!DOCTYPE html>
