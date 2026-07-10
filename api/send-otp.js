@@ -46,24 +46,39 @@ async function sendViaGmail({ user, pass, fromName, to, otp }) {
   const subject   = 'Your OTP - AI Learning Hub Password Reset';
   const textBody  = 'AI Learning Hub OTP: ' + otp + '\n\nExpires in 10 minutes. Do not share.';
   const htmlBody  = buildEmailHtml(otp, year);
-  const boundary  = 'boundary_' + Date.now();
+  const boundary = 'related_' + Date.now();
+  const altBoundary = 'alternative_' + Date.now();
+  const logoData = LOGO_B64.match(/.{1,76}/g).join('\r\n');
   const mime = [
     'From: "' + safeName + '" <' + user + '>',
     'To: <' + to + '>',
     'Subject: ' + subject,
     'Message-ID: ' + messageId,
     'MIME-Version: 1.0',
-    'Content-Type: multipart/alternative; boundary="' + boundary + '"',
+    'Content-Type: multipart/related; boundary="' + boundary + '"',
     '',
     '--' + boundary,
+    'Content-Type: multipart/alternative; boundary="' + altBoundary + '"',
+    '',
+    '--' + altBoundary,
     'Content-Type: text/plain; charset=UTF-8',
     '',
     textBody,
     '',
-    '--' + boundary,
+    '--' + altBoundary,
     'Content-Type: text/html; charset=UTF-8',
     '',
     htmlBody,
+    '',
+    '--' + altBoundary + '--',
+    '',
+    '--' + boundary,
+    'Content-Type: image/png; name="ai-learning-hub-logo.png"',
+    'Content-Transfer-Encoding: base64',
+    'Content-ID: <alh-logo>',
+    'Content-Disposition: inline; filename="ai-learning-hub-logo.png"',
+    '',
+    logoData,
     '',
     '--' + boundary + '--',
   ].join('\r\n');
@@ -108,7 +123,7 @@ function smtpSend({ user, pass, to, mime }) {
 }
 
 function buildEmailHtml(otp, year) {
-  const logoSrc = 'data:image/png;base64,' + LOGO_B64;
+  const logoSrc = 'cid:alh-logo';
   return [
     '<!DOCTYPE html><html lang="en"><head>',
     '<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">',
