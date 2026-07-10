@@ -15,9 +15,10 @@ import { isValidEmail, sanitizeEmail } from '../../../core/utils/sanitize.util';
   styleUrl: './forgot-password.component.css',
 })
 export class ForgotPasswordComponent {
-  email    = '';
-  loading  = false;
-  errorMsg = '';
+  email      = '';
+  loading    = false;
+  errorMsg   = '';
+  successMsg = '';
 
   constructor(
     private router: Router,
@@ -26,7 +27,8 @@ export class ForgotPasswordComponent {
   ) {}
 
   async onSubmit() {
-    this.errorMsg = '';
+    this.errorMsg   = '';
+    this.successMsg = '';
     const emailLower = sanitizeEmail(this.email.trim());
 
     if (!emailLower || !isValidEmail(emailLower)) {
@@ -45,25 +47,20 @@ export class ForgotPasswordComponent {
       const otp     = Math.floor(100000 + Math.random() * 900000).toString();
       const expires = Date.now() + 10 * 60 * 1000; // 10 min
 
-      // Try to send via Vercel serverless API
+      // Send via Vercel serverless function (/api/send-otp)
+      // On local dev this fails silently — OTP is never shown on screen
       let emailSent = false;
       try {
         await this.http.post('/api/send-otp', { email: emailLower, otp }).toPromise();
         emailSent = true;
       } catch {
-        // Expected in local dev — no server running
-        console.warn('[ForgotPassword] Email API unavailable — OTP will be shown on verify page.');
+        console.warn('[ForgotPassword] Email API not available (local dev).');
       }
 
-      // Persist using UTF-8-safe encoding
-      OtpStore.save({
-        otp,
-        email:    emailLower,
-        expires,
-        attempts: 0,
-        devMode:  !emailSent,
-      });
+      // Store session (devMode flag recorded but OTP never exposed in UI)
+      OtpStore.save({ otp, email: emailLower, expires, attempts: 0, devMode: !emailSent });
 
+      // Navigate to verify page
       this.router.navigate(['/verify-otp'], { queryParams: { email: emailLower } });
     } catch {
       this.errorMsg = 'Something went wrong. Please try again.';
