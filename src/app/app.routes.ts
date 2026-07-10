@@ -26,8 +26,6 @@ export const routes: Routes = [
 
   // ── Protected feature routes ──────────────────────────
   { path: 'change-password', component: ChangePasswordComponent, canActivate: [authGuard] },
-
-  // ── Protected feature routes ──────────────────────────
   { path: 'mindmap',           component: GenerateComponent, canActivate: [authGuard] },
   { path: 'mindmap/saved',     component: SavedComponent,    canActivate: [authGuard] },
 
