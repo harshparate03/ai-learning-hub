@@ -58,7 +58,7 @@ async function sendViaGmail({ user, pass, fromName, to, otp }) {
   const safeName  = String(fromName).replace(/["\r\n]/g, '').trim() || 'AI Learning Hub';
   const year      = new Date().getFullYear();
 
-  const subject  = 'Your OTP â€” AI Learning Hub Password Reset';
+  const subject  = 'Your OTP — AI Learning Hub Password Reset';
   const htmlBody = buildEmailHtml(otp, year);
   const textBody = `Your AI Learning Hub password reset OTP is: ${otp}\n\nIt expires in 10 minutes.\nDo not share it with anyone.\n\nIf you did not request this, ignore this email.`;
 
@@ -155,7 +155,7 @@ function buildEmailHtml(otp, year) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
-<title>Your OTP â€” AI Learning Hub</title>
+<title>Your OTP — AI Learning Hub</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body style="margin:0;padding:0;background-color:#F0EFFF;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased;">
