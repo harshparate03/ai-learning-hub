@@ -77,8 +77,11 @@ function buildEmail(otp, year) {
       <!-- Header gradient bar -->
       <tr>
         <td style="background:linear-gradient(135deg,#4F46E5 0%,#6366F1 50%,#818CF8 100%);padding:36px 40px 32px;text-align:center;">
-          <!-- Logo placeholder circle -->
-          <div style="display:inline-block;width:56px;height:56px;background:rgba(255,255,255,0.18);border-radius:14px;line-height:56px;text-align:center;font-size:28px;margin-bottom:16px;">🎓</div>
+          <!-- App logo -->
+          <img src="https://ai-learning-hub-vert.vercel.app/assets/bg_remove_logo.png"
+               alt="AI Learning Hub"
+               width="72" height="72"
+               style="display:block;margin:0 auto 14px;width:72px;height:72px;object-fit:contain;border-radius:14px;" />
           <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:800;letter-spacing:-0.03em;line-height:1.2;">AI Learning Hub</h1>
           <p style="margin:6px 0 0;color:rgba(255,255,255,0.75);font-size:13px;font-weight:500;">Your AI-Powered Study Platform</p>
         </td>
