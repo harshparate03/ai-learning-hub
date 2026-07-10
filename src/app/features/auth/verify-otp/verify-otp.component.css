@@ -24,14 +24,56 @@
 .auth-alert-error  { background:rgba(248,113,113,.09);border:1px solid rgba(248,113,113,.28);color:#fca5a5; }
 .auth-alert-success{ background:rgba(52,211,153,.09);border:1px solid rgba(52,211,153,.28);color:#6ee7b7; }
 
-/* Dev banner (localhost only) */
-.dev-banner {
-  display: flex; align-items: center; gap: 8px;
-  background: rgba(99,102,241,.1); border: 1px solid rgba(99,102,241,.3);
-  border-radius: 9px; padding: 9px 13px;
-  font-size: 12.5px; color: var(--indigo-400); margin-bottom: 14px; line-height: 1.4;
+/* ── Dev OTP box (localhost only) ────────────────────── */
+.dev-otp-box {
+  background: rgba(99,102,241,.07);
+  border: 1.5px dashed rgba(99,102,241,.45);
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-bottom: 18px;
+  text-align: center;
 }
-.dev-banner strong { color: var(--text-primary); }
+.dev-otp-top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--indigo-400);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  margin-bottom: 10px;
+}
+.dev-otp-code {
+  font-family: 'Courier New', monospace;
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: 10px;
+  color: var(--text-primary);
+  padding: 6px 0;
+  line-height: 1;
+}
+.dev-otp-autofill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  background: var(--grad-btn);
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter .15s, transform .15s;
+}
+.dev-otp-autofill:hover {
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+}
 
 /* OTP label */
 .otp-label { font-size:12px;font-weight:600;color:var(--text-secondary);text-align:center;margin:0 0 14px;letter-spacing:.04em;text-transform:uppercase; }

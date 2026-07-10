@@ -6,6 +6,13 @@
       <a routerLink="/" class="auth-logo">
         <img src="assets/bg_remove_logo.png" alt="AI Learning Hub" class="auth-logo-img" />
       </a>
+      <!-- Envelope icon -->
+      <div class="envelope-icon">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+          <polyline points="22,6 12,13 2,6"/>
+        </svg>
+      </div>
       <h2 class="auth-heading">Check Your Email</h2>
       <p class="auth-sub">
         A 6-digit OTP has been sent to<br>
@@ -16,6 +23,21 @@
         <span class="timer" [class.timer-warn]="timeLeft < 60">{{ formatTime(timeLeft) }}</span>
       </p>
     </div>
+
+    <!-- ─── Dev mode OTP box (localhost only) ────────────── -->
+    <div class="dev-otp-box" *ngIf="isLocalhost && devOtp">
+      <div class="dev-otp-top">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="flex-shrink:0">
+          <circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M4.22 4.22l1.42 1.42m12.72 12.72 1.42 1.42M2 12h2m16 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+        <span>Dev mode — email not sent on localhost</span>
+      </div>
+      <div class="dev-otp-code">{{ devOtp }}</div>
+      <button class="dev-otp-autofill" type="button" (click)="fillDevOtp()">
+        Auto-fill OTP
+      </button>
+    </div>
+    <!-- ─────────────────────────────────────────────────── -->
 
     <!-- Alerts -->
     <div class="auth-alert auth-alert-error" *ngIf="errorMsg">
@@ -70,7 +92,7 @@
           <svg class="spin-icon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
           </svg>
-          <span class="btn-text">Verifying...</span>
+          <span class="btn-text">Verifying…</span>
         </ng-container>
       </button>
     </form>
