@@ -35,13 +35,13 @@ try {
     assert.equal(response.status, 200, route);
     console.log('Route passed:', route);
   }
-  assert.equal((await request('/api/groq', { model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: 'hello' }] }, { authenticated: false })).response.status, 401);
+  assert.equal((await request('/api/groq', { model: 'openai/gpt-oss-120b', messages: [{ role: 'user', content: 'hello' }] }, { authenticated: false })).response.status, 401);
   assert.equal((await request('/api/auth', { action: 'signup', email, password })).response.status, 201);
   assert.equal((await request('/api/auth')).data.email, email);
   assert.equal((await request('/api/auth', { action: 'reset-password', email, password, token: 'forged' })).response.status, 401);
   assert.equal((await request('/api/auth', { action: 'logout' }, { origin: 'https://other.example' })).response.status, 403);
   console.log('Authentication, secure cookie, forged reset and origin checks passed.');
-  const ai = await request('/api/groq', { model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: 'Reply with only the word ready.' }], max_tokens: 20 });
+  const ai = await request('/api/groq', { model: 'openai/gpt-oss-120b', messages: [{ role: 'user', content: 'Reply with only the word ready.' }], max_tokens: 256 });
   assert.equal(ai.response.status, 200, 'AI HTTP ' + ai.response.status);
   assert.ok(ai.data.choices?.[0]?.message?.content);
   console.log('Live AI generation passed.');

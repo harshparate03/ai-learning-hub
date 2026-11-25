@@ -286,7 +286,7 @@ export class YoutubeService {
     const existingIds = new Set(existingItems.map((v: any) => v.id.videoId));
     const prompt = `List 12 real YouTube educational videos about: "${query}"\nReturn ONLY a JSON array:\n[{"videoId":"EXACT11CHARID","title":"Real Video Title","channel":"Channel Name"}]`;
     const body = {
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.1,
       max_tokens: 800

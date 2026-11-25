@@ -22,12 +22,11 @@ export class AiService {
   private readonly GROQ_PROXY_URL = '/api/groq';
   private readonly ON_DEMAND_TOKEN_LIMIT = 28000;
 
-  // Current Groq production models — verified working July 2026
+  // Groq chat models verified against the provider model API
   private readonly GROQ_MODELS: GroqModel[] = [
-    { id: 'llama-3.3-70b-versatile',              contextTokens: 131072, maxOutputTokens: 3072 },
-    { id: 'llama-3.1-8b-instant',                 contextTokens: 131072, maxOutputTokens: 3072 },
-    { id: 'meta-llama/llama-4-scout-17b-16e-instruct', contextTokens: 131072, maxOutputTokens: 3072 },
-    { id: 'qwen/qwen3-32b',                       contextTokens: 131072, maxOutputTokens: 3072 },
+    { id: 'openai/gpt-oss-120b',              contextTokens: 32768, maxOutputTokens: 3072 },
+    { id: 'openai/gpt-oss-20b',                 contextTokens: 32768, maxOutputTokens: 3072 },
+    { id: 'qwen/qwen3.8-27b', contextTokens: 32768, maxOutputTokens: 3072 },
   ];
 
   static readonly PROXY_ERROR =
@@ -72,7 +71,7 @@ export class AiService {
     }
 
     // Add non-system messages from newest to oldest. Truncate the newest message if needed.
-    const nonSystem = messages.filter(m => m.role !== 'system').reverse();
+    const nonSystem = messages.filter(m => m.role !== 'system').slice(-(system ? 29 : 30)).reverse();
     const kept: GroqChatMessage[] = [];
     for (const m of nonSystem) {
       const remaining = budget - total;

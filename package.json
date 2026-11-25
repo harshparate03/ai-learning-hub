@@ -22,30 +22,30 @@
   },
   "private": true,
   "dependencies": {
-    "@angular/animations": "^18.2.0",
-    "@angular/common": "^18.2.0",
-    "@angular/compiler": "^18.2.0",
-    "@angular/core": "^18.2.0",
-    "@angular/forms": "^18.2.0",
-    "@angular/platform-browser": "^18.2.0",
-    "@angular/platform-browser-dynamic": "^18.2.0",
-    "@angular/router": "^18.2.0",
+    "@angular/animations": "^21.2.26",
+    "@angular/common": "^21.2.26",
+    "@angular/compiler": "^21.2.26",
+    "@angular/core": "^21.2.26",
+    "@angular/forms": "^21.2.26",
+    "@angular/platform-browser": "^21.2.26",
+    "@angular/platform-browser-dynamic": "^21.2.26",
+    "@angular/router": "^21.2.26",
     "bootstrap": "^5.3.8",
     "d3": "^7.9.0",
     "docx": "^9.6.1",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
     "mammoth": "^1.12.0",
-    "pdfjs-dist": "^5.6.205",
+    "pdfjs-dist": "^6.5.438",
     "pptxgenjs": "^4.0.1",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
-    "zone.js": "~0.14.10"
+    "zone.js": "~0.16.0"
   },
   "devDependencies": {
-    "@angular-devkit/build-angular": "^18.2.21",
-    "@angular/cli": "^18.2.21",
-    "@angular/compiler-cli": "^18.2.0",
+    "@angular-devkit/build-angular": "^21.2.31",
+    "@angular/cli": "^21.2.31",
+    "@angular/compiler-cli": "^21.2.26",
     "@types/jasmine": "~5.1.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
@@ -57,6 +57,26 @@
     "karma-jasmine": "~5.1.0",
     "karma-jasmine-html-reporter": "~2.1.0",
     "node-fetch": "^3.3.2",
-    "typescript": "~5.5.2"
+    "typescript": "~5.9.3"
+  },
+  "overrides": {
+    "pptxgenjs": {
+      "image-size": "^2.1.0"
+    },
+    "@npmcli/package-json": {
+      "glob": "^14.0.2"
+    },
+    "cacache": {
+      "glob": "^14.0.2"
+    },
+    "@tufjs/models": {
+      "minimatch": "^11.0.1"
+    },
+    "ignore-walk": {
+      "minimatch": "^11.0.1"
+    },
+    "sockjs": {
+      "uuid": "^11.1.1"
+    }
   }
 }

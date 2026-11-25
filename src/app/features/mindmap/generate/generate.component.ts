@@ -2,7 +2,6 @@ import { readStoredArray } from '../../../core/utils/stored-array.util';
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
 import { AiService } from '../../../core/services/ai.service';
 import { YoutubeService } from '../../../core/services/youtube.service';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -52,7 +51,7 @@ import { sanitizeUserInput } from '../../../core/utils/sanitize.util';
 @Component({
   selector: 'app-generate',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, AiSparkComponent, LogoComponent],
+  imports: [CommonModule, FormsModule, AiSparkComponent, LogoComponent],
   templateUrl: './generate.component.html',
   styleUrls: ['./generate.component.css', './generate-responsive.component.css']
 })

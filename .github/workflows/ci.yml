@@ -15,6 +15,7 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci --legacy-peer-deps
+      - run: npm audit --audit-level=high
       - run: npm run test:server
       - run: npm test -- --watch=false --browsers=ChromeHeadless --progress=false
       - run: npm run build

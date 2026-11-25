@@ -28,7 +28,7 @@ import { AiSparkComponent } from '../../../shared/ai-spark/ai-spark.component';
   standalone: true,
   imports: [CommonModule, FormsModule, SafeUrlPipe, AiSparkComponent],
   templateUrl: './search.component.html',
-  styleUrls: ['./search.component.css', './search-download.component.css']
+  styleUrls: ['./search.component.css', './search-responsive.component.css', './search-download.component.css']
 })
 export class SearchComponent {
 

@@ -9,12 +9,11 @@ import { jsPDF } from 'jspdf';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
-import { AiSparkComponent } from '../../../shared/ai-spark/ai-spark.component';
 
 @Component({
   selector: 'app-chat-pdf',
   standalone: true,
-  imports: [CommonModule, FormsModule, AiSparkComponent],
+  imports: [CommonModule, FormsModule],
   templateUrl: './chat-pdf.component.html',
   styleUrls: ['./chat-pdf.component.css']
 })
@@ -100,8 +99,7 @@ export class ChatPdfComponent implements OnInit {
 
       const pdf = await pdfjsLib.getDocument({
         data: new Uint8Array(buf),
-        useWorkerFetch: false,
-        isEvalSupported: false
+        useWorkerFetch: false
       }).promise;
 
       let text = '';

@@ -1,6 +1,6 @@
 # Development and deployment
 
-Use Node.js 24 LTS. Run `npm ci --legacy-peer-deps`, copy `.env.example` to `.env`, and set API/email credentials. Run `npm start` to launch Angular at `http://localhost:4200` and the API on port 3001. Use the Angular URL; Angular proxies `/api` and keeps authentication cookies on the same origin.
+Use Node.js 24 LTS. The app uses Angular 21 and PDF.js 6 with patched dependencies. Run `npm ci --legacy-peer-deps`, copy `.env.example` to `.env`, and set API/email credentials. Run `npm start` to launch Angular at `http://localhost:4200` and the API on port 3001. Use the Angular URL; Angular proxies `/api` and keeps authentication cookies on the same origin.
 
 Generated Angular environment files contain public configuration only. Groq, YouTube, email, and database credentials stay on the server. Never put keys in frontend code or commit `.env` files.
 
@@ -12,6 +12,7 @@ Accounts use salted scrypt hashes and opaque HttpOnly session cookies. Without R
 npm run test:server
 npm test -- --watch=false --browsers=ChromeHeadless --progress=false
 npm run build
+npm audit
 ```
 
 The browser suite requires Chrome. It covers OTP resend, session restoration, upload validation, bounded chunking, saved-data recovery, and real PowerPoint creation. Server tests cover hashing, session forgery/revocation, OTP single use, reset grants, delivery failures, rate limits, and request origins. Tests use temporary account storage and mocked email delivery.

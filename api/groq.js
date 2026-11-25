@@ -17,9 +17,16 @@ export default async function handler(req, res) {
 
   try {
     const MAX_GROQ_OUTPUT_TOKENS = 3072;
-    const { model, messages, temperature, max_tokens } = req.body || {};
+    const { messages, temperature, max_tokens } = req.body || {};
+    const aliases = {
+      'llama-3.3-70b-versatile': 'openai/gpt-oss-120b',
+      'llama-3.1-8b-instant': 'openai/gpt-oss-20b',
+      'meta-llama/llama-4-scout-17b-16e-instruct': 'qwen/qwen3.8-27b',
+      'qwen/qwen3-32b': 'qwen/qwen3.8-27b'
+    };
+    const model = aliases[req.body?.model] || req.body?.model;
 
-    if (!['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'meta-llama/llama-4-scout-17b-16e-instruct', 'qwen/qwen3-32b'].includes(model) || !Array.isArray(messages) || messages.length < 1 || messages.length > 30 || messages.some(m => !m || !['user', 'assistant', 'system'].includes(m.role) || typeof m.content !== 'string') || JSON.stringify(messages).length > 120000) {
+    if (!['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'].includes(model) || !Array.isArray(messages) || messages.length < 1 || messages.length > 30 || messages.some(m => !m || !['user', 'assistant', 'system'].includes(m.role) || typeof m.content !== 'string') || JSON.stringify(messages).length > 120000) {
       return res.status(400).json({ error: 'Missing model or messages' });
     }
 
@@ -33,8 +40,9 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model,
         messages,
-        temperature: temperature ?? 0.3,
-        max_tokens:  Math.max(1, Math.min(Math.floor(Number(max_tokens)) || MAX_GROQ_OUTPUT_TOKENS, MAX_GROQ_OUTPUT_TOKENS))
+        temperature: Number.isFinite(temperature) ? Math.max(0, Math.min(temperature, 2)) : 0.3,
+        ...(model.startsWith('openai/gpt-oss-') ? { reasoning_effort: 'low' } : {}),
+        max_completion_tokens: Math.max(1, Math.min(Math.floor(Number(max_tokens)) || MAX_GROQ_OUTPUT_TOKENS, MAX_GROQ_OUTPUT_TOKENS))
       })
     });
 
