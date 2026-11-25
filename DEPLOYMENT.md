@@ -37,6 +37,8 @@ Run `vercel link --project ai-learning-hub`, then `vercel --prod`. Vercel runs `
 
 `node --use-system-ca scripts/check-services.mjs .env.production.local` checks Redis and non-redacted API credentials without displaying secrets or sending email. Vercel replaces sensitive pulled values with `[SENSITIVE]`; verify those services through the deployed API.
 
+For password reset failures, inspect production `/api/auth` logs. Gmail `535 BadCredentials` means the configured sender credentials were rejected. Create a new Google app password for the account in `GMAIL_USER`, save it as `GMAIL_APP_PASSWORD` in the ignored local `.env`, and run `node --use-system-ca scripts/check-email.mjs`. This command authenticates and quits without sending mail. Once it passes, update the corresponding Vercel production/preview secrets through stdin and redeploy. A normal Google account password will not replace an app password.
+
 ## Transition and limitations
 
 Old browser-only accounts cannot be securely imported because the server cannot establish ownership. Existing users register once after this update. Old browser credentials/session flags are removed. Saved mind maps, notes, and chat histories remain stored on that browser/device; they are not cloud-synchronized.

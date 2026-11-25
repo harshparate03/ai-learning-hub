@@ -86,6 +86,9 @@ export function createAuthHandler(db = store, sendEmail = sendOtpEmail) {
     } catch (error) {
       console.error('[auth]', error.message);
       const status = error.status || 503;
+      if (['email_not_configured', 'email_auth_failed', 'email_delivery_failed'].includes(error.code)) {
+        return res.status(503).json({ error: error.message, code: error.code });
+      }
       return res.status(status).json({ error: status === 429 ? error.message : status === 403 ? 'Request origin not allowed.' : 'Account service unavailable. Please try again later.' });
     }
   };

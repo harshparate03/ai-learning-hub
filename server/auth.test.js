@@ -73,6 +73,21 @@ test('failed resend preserves the usable code and does not claim delivery', asyn
   assert.deepEqual(await f.db.get(otpKey(email)), existing);
 });
 
+test('email authentication failure has a specific safe response and releases the resend cooldown', async t => {
+  const f = await fixture(t);
+  await f.request({ action: 'signup', email, password });
+  const handler = createAuthHandler(f.db, async () => {
+    throw Object.assign(new Error('Password reset email is unavailable. Please contact the app owner.'), { status: 503, code: 'email_auth_failed' });
+  });
+  const res = { setHeader() {}, status(code) { this.code = code; return this; }, json(data) { this.data = data; return this; } };
+  await handler({ method: 'POST', body: { action: 'send-otp', email }, headers: {} }, res);
+  assert.equal(res.code, 503);
+  assert.equal(res.data.code, 'email_auth_failed');
+  assert.match(res.data.error, /Password reset email is unavailable/);
+  assert.equal(await f.db.get('alh:otp:cooldown:' + accountKey(email)), null);
+  assert.equal(await f.db.get(otpKey(email)), null);
+});
+
 test('duplicate signup, password changes and cross-origin requests are enforced server-side', async t => {
   const f = await fixture(t);
   await f.request({ action: 'signup', email, password });
