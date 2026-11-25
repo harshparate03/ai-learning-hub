@@ -1,19 +1,19 @@
+import { requireUser } from '../server/auth.js';
 /**
  * Vercel Serverless Function — /api/youtube-details
  * Proxies YouTube Data API v3 video details, keeping the key server-side.
  */
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Cache-Control', 'no-store');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+  if (!await requireUser(req, res)) return;
 
   const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
 
   try {
-    const { id, part = 'snippet,statistics,contentDetails' } = req.query;
+    const { id, part = 'snippet,statistics,contentDetails' } = req.query || {};
     if (!id) return res.status(400).json({ error: 'Missing parameter: id' });
 
     // If no API key, return empty so caller falls back to oEmbed
@@ -26,7 +26,7 @@ export default async function handler(req, res) {
     url.searchParams.set('part', part);
     url.searchParams.set('key',  YOUTUBE_API_KEY);
 
-    const response = await fetch(url.toString());
+    const response = await fetch(url.toString(), { signal: AbortSignal.timeout(20000) });
     const data     = await response.json();
 
     if (!response.ok) {

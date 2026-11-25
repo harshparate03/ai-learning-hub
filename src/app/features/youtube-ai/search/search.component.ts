@@ -1,3 +1,4 @@
+import { readStoredArray } from '../../../core/utils/stored-array.util';
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -27,7 +28,7 @@ import { AiSparkComponent } from '../../../shared/ai-spark/ai-spark.component';
   standalone: true,
   imports: [CommonModule, FormsModule, SafeUrlPipe, AiSparkComponent],
   templateUrl: './search.component.html',
-  styleUrl: './search.component.css'
+  styleUrls: ['./search.component.css', './search-download.component.css']
 })
 export class SearchComponent {
 
@@ -1092,11 +1093,11 @@ Output ONLY:
     if (tab === 'keypoints' && this.keyPoints.length)     preview = this.keyPoints[0]?.title?.slice(0, 100) || '';
     if (tab === 'notes' && this.notesBlocks.length)       preview = this.notesBlocks.find(b => b.type === 'para')?.content?.slice(0, 100) || '';
     if (tab === 'quiz' && this.quiz.length)               preview = this.quiz[0]?.q?.slice(0, 100) || '';
-    const history = JSON.parse(localStorage.getItem('summarizer_history') || '[]');
+    const history = readStoredArray('summarizer_history');
     history.unshift({
       type: 'notes',
       title: `${title} — ${tab}`,
-      date: new Date().toLocaleDateString(),
+      date: new Date().toISOString(),
       preview,
       videoId: this.getVideoId(this.selectedVideo)
     });

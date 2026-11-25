@@ -3,6 +3,7 @@ import { provideRouter } from '@angular/router';
 import { provideAnimations } from '@angular/platform-browser/animations';
 import { provideHttpClient, withJsonpSupport } from '@angular/common/http';
 import { ThemeService } from './core/services/theme.service';
+import { AuthService } from './core/services/auth.service';
 
 import { routes } from './app.routes';
 
@@ -12,6 +13,7 @@ export const appConfig: ApplicationConfig = {
     provideRouter(routes),
     provideAnimations(),
     provideHttpClient(withJsonpSupport()),
-    { provide: APP_INITIALIZER, useFactory: (t: ThemeService) => () => {}, deps: [ThemeService], multi: true }
+    { provide: APP_INITIALIZER, useFactory: (t: ThemeService) => () => {}, deps: [ThemeService], multi: true },
+    { provide: APP_INITIALIZER, useFactory: (auth: AuthService) => () => auth.refreshSession(), deps: [AuthService], multi: true }
   ]
 };

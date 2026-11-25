@@ -40,7 +40,7 @@
 
         <div class="input-mode-panel" [class.input-mode-panel--active]="inputMode==='file'">
           <input type="file" class="form-control theme-input mb-2"
-            (change)="onFileSelected($event)" accept=".pdf,.txt,.md,.docx,.pptx,.ppt,.csv" />
+            (change)="onFileSelected($event)" accept=".pdf,.txt,.md,.docx,.pptx,.csv" />
           <p class="theme-text-secondary mb-1" style="font-size:11px;">PDF, DOCX, PPTX, TXT, CSV</p>
           <span *ngIf="fileName" class="file-name-badge">{{ fileName }}</span>
         </div>

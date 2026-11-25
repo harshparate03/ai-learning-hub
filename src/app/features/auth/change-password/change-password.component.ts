@@ -48,7 +48,8 @@ export class ChangePasswordComponent {
     return                       { label: 'Very Strong', level: 5, color: '#10b981' };
   }
 
-  onSubmit() {
+  async onSubmit() {
+    if (this.loading) return;
     this.errorMsg  = '';
     this.successMsg = '';
 
@@ -60,8 +61,8 @@ export class ChangePasswordComponent {
       this.errorMsg = 'Please fill in all fields.';
       return;
     }
-    if (this.newPassword.length < 6) {
-      this.errorMsg = 'New password must be at least 6 characters.';
+    if (this.newPassword.length < 8 || this.newPassword.length > 128) {
+      this.errorMsg = 'New password must contain 8 to 128 characters.';
       return;
     }
     if (this.newPassword !== this.confirmPassword) {
@@ -75,25 +76,14 @@ export class ChangePasswordComponent {
 
     this.loading = true;
 
-    // Verify current password by attempting a login check
-    const currentOk = this.auth.verifyPassword(this.currentEmail, this.currentPassword);
-    if (!currentOk) {
-      this.errorMsg = 'Current password is incorrect.';
-      this.loading  = false;
-      return;
-    }
-
-    const ok = this.auth.resetPassword(this.currentEmail, this.newPassword);
-    this.loading = false;
-
-    if (ok) {
+    try {
+      await this.auth.changePassword(this.currentPassword, this.newPassword);
       this.successMsg = 'Password changed successfully!';
       this.currentPassword = '';
       this.newPassword     = '';
       this.confirmPassword = '';
       setTimeout(() => this.router.navigate(['/']), 1800);
-    } else {
-      this.errorMsg = 'Could not update password. Please try again.';
-    }
+    } catch (error: any) { this.errorMsg = error.error?.error || 'Could not update password. Please try again.'; }
+    finally { this.loading = false; }
   }
 }

@@ -1,3 +1,5 @@
+import { readStoredArray } from '../../../core/utils/stored-array.util';
+import { splitTextIntoChunks } from '../../../core/utils/text-chunks.util';
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -11,7 +13,7 @@ import {
   AlignmentType, BorderStyle, ShadingType, TableCell, TableRow, Table,
   WidthType, convertInchesToTwip, UnderlineType, ImageRun
 } from 'docx';
-import pptxgen from 'pptxgenjs';
+import { createPresentation } from '../../../core/utils/presentation.util';
 import { PdfService, PdfLine, determineBulletStyle } from '../../../core/services/pdf.service';
 import { BRAND_LOGO_B64, BRAND_LOGO_WIDTH, BRAND_LOGO_HEIGHT } from '../../../core/services/brand-logo-b64';
 
@@ -49,6 +51,9 @@ import { AiSparkComponent } from '../../../shared/ai-spark/ai-spark.component';
   styleUrl: './upload.component.css'
 })
 export class UploadComponent implements OnInit {
+
+  private fileReadVersion = 0;
+  readingFile = false;
 
   mode: 'text' | 'file' = 'text';
   inputText: string = '';
@@ -92,11 +97,14 @@ export class UploadComponent implements OnInit {
   }
 
   switchMode(m: 'text' | 'file') {
+    if (this.loading || this.readingFile) return;
     this.mode = m;
     this.reset();
   }
 
   reset() {
+    this.fileReadVersion++;
+    this.readingFile = false;
     this.inputText = '';
     this.fileContent = '';
     this.fileName = '';
@@ -112,9 +120,11 @@ export class UploadComponent implements OnInit {
 
   async onFileSelected(event: any) {
     const file = event.target.files[0];
-    if (!file) return;
+    if (!file || this.loading || this.readingFile) return;
 
     this.reset();
+    const readVersion = this.fileReadVersion;
+    this.readingFile = true;
     this.fileName = file.name;
     this.progress = 'Reading file...';
     this.errorMsg = '';
@@ -127,7 +137,7 @@ export class UploadComponent implements OnInit {
 
       } else if (ext === 'pdf') {
         this.pdfArrayBuffer = await file.arrayBuffer();
-        const typedArray = new Uint8Array(this.pdfArrayBuffer as ArrayBuffer);
+        const typedArray = new Uint8Array(this.pdfArrayBuffer!.slice(0));
         const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
         let text = '';
         for (let i = 1; i <= pdf.numPages; i++) {
@@ -150,7 +160,7 @@ export class UploadComponent implements OnInit {
           this.errorMsg = 'Could not extract text from this DOCX file.';
         }
 
-      } else if (ext === 'pptx' || ext === 'ppt') {
+      } else if (ext === 'pptx') {
         const buf = await file.arrayBuffer();
         const zip = await (JSZip as any).loadAsync(buf);
         const slideFiles = Object.keys(zip.files)
@@ -166,7 +176,7 @@ export class UploadComponent implements OnInit {
           const xml = await zip.files[slideFiles[idx]].async('string');
           const textMatches = xml.match(/<a:t[^>]*>([^<]*)<\/a:t>/g) || [];
           const slideText = textMatches
-            .map((m: string) => m.replace(/<[^>]+>/g, '').trim())
+            .map((m: string) => new DOMParser().parseFromString('<root>' + m + '</root>', 'application/xml').documentElement.textContent?.trim() || '')
             .filter((t: string) => t.length > 0)
             .join(' ');
           if (slideText) text += `[Slide ${idx + 1}] ${slideText}\n\n`;
@@ -182,29 +192,21 @@ export class UploadComponent implements OnInit {
       this.fileContent = '';
     }
 
-    this.progress = '';
+    if (readVersion === this.fileReadVersion) {
+      this.progress = '';
+      this.readingFile = false;
+    }
   }
 
   get canGenerate(): boolean {
+    if (this.readingFile || this.loading) return false;
     return this.mode === 'text'
       ? this.inputText.trim().length > 0
-      : this.fileContent.length > 0;
+      : this.fileContent.trim().length > 0;
   }
 
   chunkText(text: string, size: number): string[] {
-    const chunks: string[] = [];
-    const paragraphs = text.split(/\n\n+/);
-    let current = '';
-    for (const para of paragraphs) {
-      if ((current + '\n\n' + para).length > size && current) {
-        chunks.push(current.trim());
-        current = para;
-      } else {
-        current = current ? current + '\n\n' + para : para;
-      }
-    }
-    if (current.trim()) chunks.push(current.trim());
-    return chunks.length ? chunks : [text];
+    return splitTextIntoChunks(text, size);
   }
 
 
@@ -237,7 +239,7 @@ export class UploadComponent implements OnInit {
   async extractPdfImages() {
     if (!this.pdfArrayBuffer) return;
     try {
-      const typedArray = new Uint8Array(this.pdfArrayBuffer as ArrayBuffer);
+      const typedArray = new Uint8Array(this.pdfArrayBuffer!.slice(0));
       const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
@@ -256,7 +258,10 @@ export class UploadComponent implements OnInit {
           this.pdfImages.push({ pageNum: i, dataUrl: canvas.toDataURL('image/jpeg', 0.75) });
         }
       }
-    } catch {}
+    } catch (error) {
+      console.warn('[PDF image extraction]', error);
+      this.errorMsg = 'PDF text was read, but its images could not be extracted.';
+    }
   }
 
   async generateAI() {
@@ -276,7 +281,7 @@ export class UploadComponent implements OnInit {
     // Use larger chunks to reduce number of API calls (fewer = less rate limiting)
     const chunks = this.chunkText(content, 7000);
 
-    this.extractPdfImages();
+    await this.extractPdfImages();
 
     // Store original content for Q&A (not raw AI JSON)
     const originalContent = content;
@@ -308,6 +313,7 @@ Output complete JSON now:`;
           chunkText = res?.choices?.[0]?.message?.content || '';
         } catch (chunkErr: any) {
           const s = chunkErr?.status;
+          if (s === 401 || s === 403) throw chunkErr;
           if (s === 429) {
             this.progress = `Rate limited — waiting 15s before retrying section ${i + 1}...`;
             await new Promise(r => setTimeout(r, 15000));
@@ -316,10 +322,12 @@ Output complete JSON now:`;
               chunkText = retryRes?.choices?.[0]?.message?.content || '';
             } catch {
               chunkText = this.buildLocalChunkJson(chunks[i]);
+              this.errorMsg = 'AI is unavailable for part of this document. Those sections contain basic local notes.';
             }
           } else {
             // Any other error — use local fallback for this chunk, don't abort all
             chunkText = this.buildLocalChunkJson(chunks[i]);
+            this.errorMsg = 'AI is unavailable for part of this document. Those sections contain basic local notes.';
           }
         }
 
@@ -379,7 +387,7 @@ Output JSON now:`;
       const status = err?.status;
       const msg = err?.error?.error?.message || err?.message || 'AI processing failed.';
       if (status === 401 || status === 403) {
-        this.errorMsg = 'API key is not valid. Please check the API key configuration.';
+        this.errorMsg = 'Access was denied. Please sign in again or contact the app owner if it continues.';
       } else if (status === 429) {
         this.errorMsg = 'Rate limit reached. Please wait 1-2 minutes and try again. Your API key has a usage limit per minute.';
       } else if (status === 503 || /all ai models failed/i.test(msg)) {
@@ -1208,10 +1216,12 @@ Output JSON now:`;
     }
   }
 
-  downloadPPT() {
+  async downloadPPT() {
     const title = this.detectedSubject || this.fileName || 'Study Notes';
     const clean = (s: string) => (s || '').replace(/\*\*(.*?)\*\*/g, '$1').trim();
-    const pptx  = new pptxgen();
+    let pptx;
+    try { pptx = await createPresentation(); }
+    catch (error: any) { this.errorMsg = error.message; return; }
 
     const themeType = this.getThemeFromContent(title, this.topics);
     const theme = this.getThemeColors(themeType);
@@ -1389,7 +1399,8 @@ Output JSON now:`;
       });
     }
 
-    pptx.writeFile({ fileName: 'study-notes.pptx' });
+    try { await pptx.writeFile({ fileName: 'study-notes.pptx' }); }
+    catch { this.errorMsg = 'Could not export the presentation. Please try again.'; }
   }
 
   triggerDownload(blob: Blob, filename: string) {
@@ -1405,7 +1416,7 @@ Output JSON now:`;
 
     const title = this.detectedSubject || this.fileName || 'Study Notes';
     try {
-      const history = JSON.parse(localStorage.getItem('summarizer_history') || '[]');
+      const history = readStoredArray('summarizer_history');
 
       // Duplicate guard — same title + same first topic = same content, skip
       const firstTopic = this.topics[0]?.title?.replace(/\*\*/g, '').trim() || '';
@@ -1420,7 +1431,7 @@ Output JSON now:`;
         history.unshift({
           type: 'summary',
           title,
-          date: new Date().toLocaleDateString(),
+          date: new Date().toISOString(),
           preview: this.topics[0]?.explanation?.replace(/\*\*(.*?)\*\*/g, '$1')?.slice(0, 100) || '',
           content: this.topics.map(t => `${t.title.replace(/\*\*(.*?)\*\*/g,'')}: ${t.explanation.replace(/\*\*(.*?)\*\*/g,'$1')}`).join('\n'),
           topics: JSON.parse(JSON.stringify(this.topics)),

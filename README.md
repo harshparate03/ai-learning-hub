@@ -1,10 +1,10 @@
 # AiLearningHub
 
-This project was generated with [Angular CLI](https://github.com/angular/angular-cli) version 18.2.21.
+Angular study tools for mind maps, YouTube notes, document summaries, and PDF chat. See [development, validation, and deployment instructions](DEPLOYMENT.md).
 
 ## Development server
 
-Run `ng serve` for a dev server. Navigate to `http://localhost:4200/`. The application will automatically reload if you change any of the source files.
+Use Node.js 24 LTS. Run `npm ci --legacy-peer-deps`, copy `.env.example` to `.env`, configure the server credentials, and run `npm start`. Navigate to `http://localhost:4200/`. This starts Angular and the API proxy required for accounts and AI tools.
 
 ## Code scaffolding
 
@@ -12,7 +12,7 @@ Run `ng generate component component-name` to generate a new component. You can 
 
 ## Build
 
-Run `ng build` to build the project. The build artifacts will be stored in the `dist/` directory.
+Run `npm run build`. Artifacts are stored in `dist/ai-learning-hub/browser`. Deploy with the serverless `api/` functions; a static-only host cannot run all features.
 
 ## Running unit tests
 

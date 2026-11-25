@@ -1,3 +1,4 @@
+import { readStoredArray } from '../../../core/utils/stored-array.util';
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
@@ -19,8 +20,7 @@ export class SavedComponent {
   }
 
   load() {
-    const saved = localStorage.getItem('mindmaps');
-    this.savedMaps = saved ? JSON.parse(saved) : [];
+    this.savedMaps = readStoredArray('mindmaps');
   }
 
   openMap(map: { title: string; data: any; date: string }) {

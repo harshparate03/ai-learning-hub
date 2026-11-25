@@ -1,3 +1,4 @@
+import { readStoredArray } from '../../../core/utils/stored-array.util';
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
@@ -35,7 +36,7 @@ export class HistoryComponent implements OnInit {
   loadHistory() {
     const all: HistoryItem[] = [];
 
-    const maps = JSON.parse(localStorage.getItem('mindmaps') || '[]');
+    const maps = readStoredArray('mindmaps');
     maps.forEach((m: any) => {
       all.push({
         id: `mindmap_${m.title}_${m.date}`,
@@ -47,7 +48,7 @@ export class HistoryComponent implements OnInit {
       });
     });
 
-    const summaries = JSON.parse(localStorage.getItem('summarizer_history') || '[]');
+    const summaries = readStoredArray('summarizer_history');
     summaries.forEach((s: any) => {
       all.push({
         id: `summary_${s.title}_${s.date}`,
@@ -239,11 +240,11 @@ export class HistoryComponent implements OnInit {
 
   deleteItem(item: HistoryItem) {
     if (item.type === 'mindmap') {
-      const maps = JSON.parse(localStorage.getItem('mindmaps') || '[]');
+      const maps = readStoredArray('mindmaps');
       const updated = maps.filter((m: any) => !(m.title === item.title && m.date === item.date));
       localStorage.setItem('mindmaps', JSON.stringify(updated));
     } else {
-      const hist = JSON.parse(localStorage.getItem('summarizer_history') || '[]');
+      const hist = readStoredArray('summarizer_history');
       const updated = hist.filter((s: any) => !(s.title === item.title && s.date === item.date));
       localStorage.setItem('summarizer_history', JSON.stringify(updated));
     }

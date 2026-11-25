@@ -18,6 +18,7 @@ export class SignupComponent {
   confirmPassword = '';
   errorMsg        = '';
   successMsg      = '';
+  loading = false;
 
   redirectUrl = '/';
   constructor(
@@ -38,7 +39,8 @@ export class SignupComponent {
     }
   }
 
-  signup() {
+  async signup() {
+    if (this.loading) return;
     this.errorMsg  = '';
     this.successMsg = '';
 
@@ -52,21 +54,18 @@ export class SignupComponent {
       return;
     }
 
-    if (this.password.length < 6) {
-      this.errorMsg = 'Password must be at least 6 characters.';
+    if (this.password.length < 8 || this.password.length > 128) {
+      this.errorMsg = 'Password must contain 8 to 128 characters.';
       return;
     }
 
-    const success = this.auth.signup(this.email, this.password);
-    if (success) {
+    this.loading = true;
+    try {
+      await this.auth.signup(this.email, this.password);
       this.successMsg = 'Account created! Signing you in...';
       // Auto-login after signup, then redirect to original destination
-      this.auth.login(this.email, this.password);
       setTimeout(() => this.router.navigateByUrl(this.redirectUrl), 1200);
-    } else if (this.auth.isEmailTaken(this.email)) {
-      this.errorMsg = 'Email already registered. Try signing in instead.';
-    } else {
-      this.errorMsg = 'Could not create account. Check your email and try a stronger password.';
-    }
+    } catch (error: any) { this.errorMsg = error.error?.error || 'Could not create account. Please try again.'; }
+    finally { this.loading = false; }
   }
 }

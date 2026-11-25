@@ -8,6 +8,8 @@
 
 # Node
 /node_modules
+/.local
+/.vercel
 npm-debug.log
 yarn-error.log
 
@@ -48,3 +50,6 @@ Thumbs.db
 src/environments/environment.ts
 src/environments/environment.prod.ts
 
+
+.vercel
+.env*

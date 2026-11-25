@@ -136,13 +136,18 @@ describe('YoutubeQuotaOptimizedService', () => {
       };
 
       // Make two identical searches concurrently
-      service.searchVideos('test').subscribe();
-      service.searchVideos('test').subscribe();
+      const first = jasmine.createSpy('first subscriber');
+      const second = jasmine.createSpy('second subscriber');
+      service.searchVideos('test').subscribe(first);
+      service.searchVideos('test').subscribe(second);
 
       const req = httpMock.expectOne(request =>
         request.url.includes('/api/youtube-search')
       );
       req.flush(mockResponse);
+      expect(first).toHaveBeenCalledTimes(1);
+      expect(second).toHaveBeenCalledTimes(1);
+      expect(first.calls.mostRecent().args[0]).toEqual(second.calls.mostRecent().args[0]);
     });
   });
 

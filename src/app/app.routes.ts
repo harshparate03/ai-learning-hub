@@ -1,45 +1,32 @@
 import { Routes } from '@angular/router';
 import { HomeComponent } from './features/home/home.component';
-import { GenerateComponent } from './features/mindmap/generate/generate.component';
-import { SavedComponent } from './features/mindmap/saved/saved.component';
-import { SearchComponent } from './features/youtube-ai/search/search.component';
-import { UploadComponent } from './features/summarizer/upload/upload.component';
-import { HistoryComponent } from './features/summarizer/history/history.component';
-import { ChatPdfComponent } from './features/summarizer/chat-pdf/chat-pdf.component';
-import { LoginComponent } from './features/auth/login/login.component';
-import { SignupComponent } from './features/auth/signup/signup.component';
-import { ForgotPasswordComponent } from './features/auth/forgot-password/forgot-password.component';
-import { VerifyOtpComponent } from './features/auth/verify-otp/verify-otp.component';
-import { ResetPasswordComponent } from './features/auth/reset-password/reset-password.component';
-import { ChangePasswordComponent } from './features/auth/change-password/change-password.component';
-import { NotFoundComponent } from './features/not-found/not-found.component';
 import { authGuard } from './core/guards/auth.guard';
 
 export const routes: Routes = [
   // ── Public routes (no auth required) ─────────────────
   { path: '',               component: HomeComponent },   // Home is PUBLIC
-  { path: 'login',          component: LoginComponent },
-  { path: 'signup',         component: SignupComponent },
-  { path: 'forgot-password',  component: ForgotPasswordComponent },
-  { path: 'verify-otp',      component: VerifyOtpComponent },
-  { path: 'reset-password',  component: ResetPasswordComponent },
+  { path: 'login',          loadComponent: () => import('./features/auth/login/login.component').then(m => m.LoginComponent) },
+  { path: 'signup',         loadComponent: () => import('./features/auth/signup/signup.component').then(m => m.SignupComponent) },
+  { path: 'forgot-password',  loadComponent: () => import('./features/auth/forgot-password/forgot-password.component').then(m => m.ForgotPasswordComponent) },
+  { path: 'verify-otp',      loadComponent: () => import('./features/auth/verify-otp/verify-otp.component').then(m => m.VerifyOtpComponent) },
+  { path: 'reset-password',  loadComponent: () => import('./features/auth/reset-password/reset-password.component').then(m => m.ResetPasswordComponent) },
 
   // ── Protected feature routes ──────────────────────────
-  { path: 'change-password', component: ChangePasswordComponent, canActivate: [authGuard] },
-  { path: 'mindmap',           component: GenerateComponent, canActivate: [authGuard] },
-  { path: 'mindmap/saved',     component: SavedComponent,    canActivate: [authGuard] },
+  { path: 'change-password', loadComponent: () => import('./features/auth/change-password/change-password.component').then(m => m.ChangePasswordComponent), canActivate: [authGuard] },
+  { path: 'mindmap',           loadComponent: () => import('./features/mindmap/generate/generate.component').then(m => m.GenerateComponent), canActivate: [authGuard] },
+  { path: 'mindmap/saved',     loadComponent: () => import('./features/mindmap/saved/saved.component').then(m => m.SavedComponent),    canActivate: [authGuard] },
 
-  { path: 'youtube',           component: SearchComponent,   canActivate: [authGuard] },
+  { path: 'youtube',           loadComponent: () => import('./features/youtube-ai/search/search.component').then(m => m.SearchComponent),   canActivate: [authGuard] },
   { path: 'youtube/summary',   redirectTo: '/youtube',            pathMatch: 'full' },
   { path: 'youtube/notes',     redirectTo: '/youtube',            pathMatch: 'full' },
 
-  { path: 'summarizer/upload', component: UploadComponent,   canActivate: [authGuard] },
-  { path: 'summarizer/chat',   component: ChatPdfComponent,  canActivate: [authGuard] },
+  { path: 'summarizer/upload', loadComponent: () => import('./features/summarizer/upload/upload.component').then(m => m.UploadComponent),   canActivate: [authGuard] },
+  { path: 'summarizer/chat',   loadComponent: () => import('./features/summarizer/chat-pdf/chat-pdf.component').then(m => m.ChatPdfComponent),  canActivate: [authGuard] },
   { path: 'summarizer/summary',redirectTo: '/summarizer/upload',  pathMatch: 'full' },
   { path: 'summarizer/qa',     redirectTo: '/summarizer/upload',  pathMatch: 'full' },
 
-  { path: 'history',           component: HistoryComponent,  canActivate: [authGuard] },
+  { path: 'history',           loadComponent: () => import('./features/summarizer/history/history.component').then(m => m.HistoryComponent),  canActivate: [authGuard] },
 
   // ── 404 ───────────────────────────────────────────────
-  { path: '**', component: NotFoundComponent },
+  { path: '**', loadComponent: () => import('./features/not-found/not-found.component').then(m => m.NotFoundComponent) },
 ];

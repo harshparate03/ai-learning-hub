@@ -67,10 +67,12 @@ export class NavbarComponent implements OnDestroy {
     this.closeMenu();
   }
 
-  logout() {
+  async logout() {
     this.isUserMenuOpen = false;
-    this.auth.logout();
-    this.router.navigate(['/login']);
+    try {
+      await this.auth.logout();
+      await this.router.navigate(['/login']);
+    } catch { window.alert('Could not sign out. Please try again.'); }
   }
 
   ngOnDestroy(): void {

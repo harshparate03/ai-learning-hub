@@ -1,9 +1,8 @@
 ﻿import { Injectable } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { Observable, of, forkJoin } from 'rxjs';
 import { map, catchError, switchMap } from 'rxjs/operators';
 import { sanitizeUserInput } from '../utils/sanitize.util';
-import { environment } from '../../../environments/environment';
 
 /** Curated list of verified real educational YouTube videos */
 const CURATED_VIDEOS: { videoId: string; title: string; channel: string; tags: string[] }[] = [
@@ -88,16 +87,12 @@ const CURATED_VIDEOS: { videoId: string; title: string; channel: string; tags: s
 @Injectable({ providedIn: 'root' })
 export class YoutubeService {
 
-  private readonly KEY        = environment.youtubeApiKey || '';
-  get hasApiKey(): boolean     { return !!this.KEY; }
+  get hasApiKey(): boolean { return true; }
 
   private readonly SEARCH_URL = '/api/youtube-search';
   private readonly VIDEO_URL  = '/api/youtube-details';
-  private readonly DIRECT_SEARCH_URL = 'https://www.googleapis.com/youtube/v3/search';
-  private readonly DIRECT_VIDEO_URL  = 'https://www.googleapis.com/youtube/v3/videos';
-  private readonly OEMBED_URL = 'https://www.youtube.com/oembed';
-  private readonly GROQ_URL   = 'https://api.groq.com/openai/v1/chat/completions';
-  private readonly GROQ_KEY   = environment.groqApiKey || '';
+  private readonly OEMBED_URL = '/api/youtube-oembed';
+  private readonly GROQ_URL   = '/api/groq';
 
   constructor(private http: HttpClient) {}
 
@@ -224,7 +219,6 @@ export class YoutubeService {
     return this.http.get(this.SEARCH_URL, {
       params: { q: safeQuery, type: 'video', maxResults: '12' }
     }).pipe(
-      catchError(() => this.searchVideosDirect(safeQuery)),
       catchError(() => {
         console.warn('[YouTube] API unavailable, using curated fallback');
         return this.searchWithAIFallback(safeQuery);
@@ -232,21 +226,6 @@ export class YoutubeService {
     );
   }
 
-  private searchVideosDirect(query: string): Observable<any> {
-    if (!this.KEY) throw new Error('YouTube API key missing');
-    return this.http.get(this.DIRECT_SEARCH_URL, {
-      params: {
-        part: 'snippet',
-        q: query,
-        key: this.KEY,
-        maxResults: '12',
-        type: 'video',
-        videoEmbeddable: 'true',
-        order: 'relevance',
-        relevanceLanguage: 'en'
-      }
-    });
-  }
 
   /**
    * Two-stage fallback when the YouTube Data API key is invalid/quota exceeded:
@@ -312,8 +291,7 @@ export class YoutubeService {
       temperature: 0.1,
       max_tokens: 800
     };
-    const groqHeaders = new HttpHeaders({ 'Authorization': `Bearer ${this.GROQ_KEY}`, 'Content-Type': 'application/json' });
-    return this.http.post(this.GROQ_URL, body, { headers: groqHeaders }).pipe(
+    return this.http.post(this.GROQ_URL, body).pipe(
       switchMap((res: any) => {
         const text = res?.choices?.[0]?.message?.content || '';
         let candidates: { videoId: string; title: string; channel: string }[] = [];
@@ -378,21 +356,10 @@ export class YoutubeService {
   getVideoDetails(videoId: string): Observable<any> {
     const params = { id: videoId, part: 'snippet,statistics,contentDetails' };
     return this.http.get(this.VIDEO_URL, { params }).pipe(
-      catchError(() => this.getVideoDetailsDirect(videoId)),
       catchError(() => of({ items: [] }))
     );
   }
 
-  private getVideoDetailsDirect(videoId: string): Observable<any> {
-    if (!this.KEY) throw new Error('YouTube API key missing');
-    return this.http.get(this.DIRECT_VIDEO_URL, {
-      params: {
-        id: videoId,
-        part: 'snippet,statistics,contentDetails',
-        key: this.KEY
-      }
-    });
-  }
 
   getOEmbed(videoId: string): Observable<any> {
     return this.http.get(this.OEMBED_URL, {

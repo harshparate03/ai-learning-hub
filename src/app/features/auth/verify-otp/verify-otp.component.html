@@ -8,7 +8,7 @@
       </a>
       <h2 class="auth-heading">Check Your Email</h2>
       <p class="auth-sub">
-        A 6-digit OTP has been sent to<br>
+        If an account exists, a 6-digit code was sent to<br>
         <strong class="email-highlight">{{ email }}</strong>
       </p>
       <p class="timer-row">
@@ -18,19 +18,7 @@
     </div>
 
     <!-- ─── Dev mode OTP box (localhost only) ────────────── -->
-    <div class="dev-otp-box" *ngIf="isLocalhost && devOtp">
-      <div class="dev-otp-top">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="flex-shrink:0">
-          <circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M4.22 4.22l1.42 1.42m12.72 12.72 1.42 1.42M2 12h2m16 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
-        </svg>
-        <span>Dev mode — email not sent on localhost</span>
-      </div>
-      <div class="dev-otp-code">{{ devOtp }}</div>
-      <button class="dev-otp-autofill" type="button" (click)="fillDevOtp()">
-        Auto-fill OTP
-      </button>
-    </div>
-    <!-- ─────────────────────────────────────────────────── -->
+
 
     <!-- Alerts -->
     <div class="auth-alert auth-alert-error" *ngIf="errorMsg">
@@ -65,13 +53,13 @@
           (input)="onDigitInput($event, i)"
           (keydown)="onKeyDown($event, i)"
           (paste)="onPaste($event)"
-          [disabled]="loading || expired || !!successMsg" />
+          [disabled]="loading || expired || verified" />
       </div>
 
       <!-- Verify button -->
       <button type="submit" class="auth-submit"
         [class.loading]="loading"
-        [disabled]="digits.join('').length !== 6 || loading || expired || !!successMsg">
+        [disabled]="digits.join('').length !== 6 || loading || expired || verified">
         <ng-container *ngIf="!loading">
           <span class="btn-icon btn-icon-left">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">

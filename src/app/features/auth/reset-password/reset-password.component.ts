@@ -32,7 +32,7 @@ export class ResetPasswordComponent {
 
     // Must arrive with a verified OTP session
     const session = OtpStore.load();
-    if (!session || !session.verified || session.email !== this.email || Date.now() > session.expires) {
+    if (!session || !session.token || session.email !== this.email || Date.now() > session.expires) {
       OtpStore.clear();
       this.router.navigate(['/forgot-password']);
     }
@@ -54,7 +54,8 @@ export class ResetPasswordComponent {
     return                       { label: 'Very Strong', level: 5, color: '#10b981' };
   }
 
-  onSubmit() {
+  async onSubmit() {
+    if (this.loading) return;
     this.errorMsg  = '';
     this.successMsg = '';
 
@@ -62,8 +63,8 @@ export class ResetPasswordComponent {
       this.errorMsg = 'Please fill in both password fields.';
       return;
     }
-    if (this.password.length < 6) {
-      this.errorMsg = 'Password must be at least 6 characters.';
+    if (this.password.length < 8 || this.password.length > 128) {
+      this.errorMsg = 'Password must contain 8 to 128 characters.';
       return;
     }
     if (this.password !== this.confirmPassword) {
@@ -72,16 +73,14 @@ export class ResetPasswordComponent {
     }
 
     this.loading = true;
-    const ok = this.auth.resetPassword(this.email, this.password);
-
-    if (ok) {
+    try {
+      const session = OtpStore.load();
+      if (!session?.token || session.email !== this.email || Date.now() > session.expires) throw new Error('Verification expired. Please request a new code.');
+      await this.auth.resetPassword(this.email, this.password, session.token);
       OtpStore.clear();
       this.successMsg = 'Password reset! Signing you in…';
-      this.auth.login(this.email, this.password);
       setTimeout(() => this.router.navigate(['/']), 1500);
-    } else {
-      this.errorMsg = 'Could not reset password. Please try again.';
-    }
-    this.loading = false;
+    } catch (error: any) { this.errorMsg = error.error?.error || error.message || 'Could not reset password.'; }
+    finally { this.loading = false; }
   }
 }

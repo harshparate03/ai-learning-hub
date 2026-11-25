@@ -2,5 +2,6 @@
   "name": "ai-learning-hub-api",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "Vercel serverless API functions — no extra dependencies needed (Node built-ins + fetch only)"
 }

@@ -45,9 +45,10 @@ export class YoutubeQuotaOptimizedService {
    * Initialize quota exceeded state from localStorage
    */
   private initializeQuotaState(): void {
-    const quotaState = localStorage.getItem('yt_quota_exceeded');
+    let quotaState: { exceeded?: boolean; timestamp?: number } | null = null;
+    try { quotaState = JSON.parse(localStorage.getItem('yt_quota_exceeded') || 'null'); } catch { return; }
     if (quotaState) {
-      const { exceeded, timestamp } = JSON.parse(quotaState);
+      const { exceeded, timestamp = 0 } = quotaState;
       if (exceeded && Date.now() - timestamp < 24 * 60 * 60 * 1000) {
         this.quotaExceeded$.next(true);
       } else {
@@ -87,8 +88,8 @@ export class YoutubeQuotaOptimizedService {
     }
 
     const request$ = this.makeAPIRequest(normalizedQuery, cacheKey).pipe(
-      share(),
-      finalize(() => this.pendingRequests.delete(normalizedQuery))
+      finalize(() => this.pendingRequests.delete(normalizedQuery)),
+      share()
     );
     this.pendingRequests.set(normalizedQuery, request$);
 
@@ -101,7 +102,7 @@ export class YoutubeQuotaOptimizedService {
   private makeAPIRequest(query: string, cacheKey: string): Observable<SearchResponse> {
 
     return new Observable(observer => {
-      this.http.get<any>(this.SEARCH_URL, {
+      return this.http.get<any>(this.SEARCH_URL, {
         params: {
           q: query,
           type: 'video',

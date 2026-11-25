@@ -3,3 +3,7 @@ node_modules
 dist
 *.spec.ts
 karma.conf.js
+.env*
+!.env.example
+.local
+server/*.test.js

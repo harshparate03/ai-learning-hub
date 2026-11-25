@@ -3,233 +3,73 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, ActivatedRoute, RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
 import { OtpStore } from '../../../core/services/otp.service';
-
 @Component({
-  selector: 'app-verify-otp',
-  standalone: true,
+  selector: 'app-verify-otp', standalone: true,
   imports: [CommonModule, FormsModule, RouterLink],
-  templateUrl: './verify-otp.component.html',
-  styleUrl: './verify-otp.component.css',
+  templateUrl: './verify-otp.component.html', styleUrl: './verify-otp.component.css'
 })
 export class VerifyOtpComponent implements OnInit, OnDestroy {
-  email          = '';
-  digits         = ['', '', '', '', '', ''];
-  loading        = false;
-  errorMsg       = '';
-  successMsg     = '';
-  timeLeft       = 600;
-  resendCooldown = 0;
-  expired        = false;
-
-  /** OTP shown directly on page — only when running on localhost (devMode) */
-  devOtp = '';
-
-  /** true when hostname is localhost / 127.0.0.1 */
-  readonly isLocalhost =
-    typeof window !== 'undefined' &&
-    ['localhost', '127.0.0.1'].includes(window.location.hostname);
-
-  private timerRef:  ReturnType<typeof setInterval> | null = null;
-  private resendRef: ReturnType<typeof setInterval> | null = null;
-
-  constructor(
-    private router: Router,
-    private route:  ActivatedRoute,
-    private http:   HttpClient,
-  ) {}
-
+  email = ''; digits = ['', '', '', '', '', '']; loading = false;
+  errorMsg = ''; successMsg = ''; verified = false;
+  timeLeft = 600; resendCooldown = 0; expired = false;
+  private expires = 0;
+  private cooldownUntil = 0;
+  private timer?: ReturnType<typeof setInterval>;
+  constructor(private router: Router, private route: ActivatedRoute, private http: HttpClient) {}
   ngOnInit() {
     this.email = this.route.snapshot.queryParams['email'] || '';
-
     const session = OtpStore.load();
-    if (!session) { this.router.navigate(['/forgot-password']); return; }
-    if (session.email !== this.email) { this.router.navigate(['/forgot-password']); return; }
-
-    const remaining = Math.floor((session.expires - Date.now()) / 1000);
-    if (remaining <= 0) {
-      this.expired  = true;
-      this.timeLeft = 0;
-      this.errorMsg = 'OTP has expired. Please request a new one.';
-      return;
-    }
-
-    this.timeLeft = remaining;
-
-    // On localhost: show OTP directly on screen (email API not available locally)
-    if (this.isLocalhost && session.devMode) {
-      this.devOtp = session.otp;
-    }
-
-    this.startTimer();
-    setTimeout(() => this.focusBox(0), 120);
+    if (!session || session.email !== this.email) { void this.router.navigate(['/forgot-password']); return; }
+    this.expires = session.expires;
+    this.tick();
+    this.timer = setInterval(() => this.tick(), 1000);
   }
-
-  ngOnDestroy() {
-    if (this.timerRef)  clearInterval(this.timerRef);
-    if (this.resendRef) clearInterval(this.resendRef);
+  ngOnDestroy() { if (this.timer) clearInterval(this.timer); }
+  private tick() {
+    this.timeLeft = Math.max(0, Math.ceil((this.expires - Date.now()) / 1000));
+    this.resendCooldown = Math.max(0, Math.ceil((this.cooldownUntil - Date.now()) / 1000));
+    this.expired = this.timeLeft === 0;
   }
-
-  /** Auto-fill OTP boxes from devOtp (localhost only) */
-  fillDevOtp() {
-    if (!this.devOtp) return;
-    this.devOtp.split('').forEach((ch, i) => { this.digits[i] = ch; });
-    setTimeout(() => this.onVerify(), 80);
+  formatTime(seconds: number): string { return `${Math.floor(seconds / 60)}:${(seconds % 60).toString().padStart(2, '0')}`; }
+  onDigitInput(event: Event, index: number) {
+    const input = event.target as HTMLInputElement;
+    this.digits[index] = input.value.replace(/\D/g, '').slice(-1); input.value = this.digits[index];
+    if (input.value && index < 5) this.focusBox(index + 1);
+    if (this.digits.join('').length === 6) void this.onVerify();
   }
-
-  // ── Timer ─────────────────────────────────────────────────
-  private startTimer() {
-    if (this.timerRef) clearInterval(this.timerRef);
-    this.timerRef = setInterval(() => {
-      this.timeLeft = Math.max(0, this.timeLeft - 1);
-      if (this.timeLeft === 0) {
-        clearInterval(this.timerRef!);
-        this.expired  = true;
-        this.errorMsg = 'OTP has expired. Please request a new one.';
-      }
-    }, 1000);
+  onKeyDown(event: KeyboardEvent, index: number) {
+    if (event.key === 'Backspace' && !this.digits[index] && index > 0) { this.digits[index - 1] = ''; this.focusBox(index - 1); }
   }
-
-  formatTime(s: number): string {
-    return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
-  }
-
-  // ── Input handling ────────────────────────────────────────
-  onDigitInput(event: Event, i: number) {
-    const el  = event.target as HTMLInputElement;
-    const val = el.value.replace(/\D/g, '').slice(-1);
-    this.digits[i] = val;
-    el.value = val;
-    if (val && i < 5) this.focusBox(i + 1);
-    if (this.digits.join('').length === 6) this.onVerify();
-  }
-
-  onKeyDown(event: KeyboardEvent, i: number) {
-    if (event.key === 'Backspace' && !this.digits[i] && i > 0) {
-      this.digits[i - 1] = '';
-      this.focusBox(i - 1);
-    }
-  }
-
   onPaste(event: ClipboardEvent) {
     event.preventDefault();
-    const text = event.clipboardData?.getData('text')?.replace(/\D/g, '').slice(0, 6) || '';
-    text.split('').forEach((ch, idx) => { this.digits[idx] = ch; });
-    setTimeout(() => this.focusBox(Math.min(text.length, 5)), 0);
-    if (text.length === 6) setTimeout(() => this.onVerify(), 80);
+    const text = event.clipboardData?.getData('text').replace(/\D/g, '').slice(0, 6) || '';
+    this.digits = Array.from({ length: 6 }, (_, i) => text[i] || ''); this.focusBox(Math.min(text.length, 5));
+    if (text.length === 6) void this.onVerify();
   }
-
-  private focusBox(i: number) {
-    (document.getElementById(`otp-${i}`) as HTMLInputElement)?.focus();
+  private focusBox(index: number) { document.getElementById(`otp-${index}`)?.focus(); }
+  async onVerify() {
+    if (this.loading || this.expired || this.verified || this.digits.join('').length !== 6) return;
+    this.loading = true; this.errorMsg = ''; this.successMsg = '';
+    try {
+      const result = await firstValueFrom(this.http.post<{ token: string; expires: number }>('/api/auth', { action: 'verify-otp', email: this.email, otp: this.digits.join('') }));
+      OtpStore.save({ email: this.email, token: result.token, expires: result.expires }); this.verified = true;
+      await this.router.navigate(['/reset-password'], { queryParams: { email: this.email } });
+    } catch (error: any) {
+      this.errorMsg = error.error?.error || 'Could not verify the code. Please try again.';
+      this.digits = ['', '', '', '', '', '']; this.focusBox(0);
+    } finally { this.loading = false; }
   }
-
-  // ── Verify ────────────────────────────────────────────────
-  onVerify() {
-    this.errorMsg = '';
-    const entered = this.digits.join('');
-    if (entered.length !== 6 || this.expired || this.successMsg) return;
-
-    const session = OtpStore.load();
-    if (!session) { this.errorMsg = 'Session expired. Please start over.'; return; }
-
-    if (Date.now() > session.expires) {
-      this.expired  = true;
-      this.errorMsg = 'OTP has expired. Please request a new one.';
-      return;
-    }
-
-    const attempts = (session.attempts || 0) + 1;
-    if (attempts > 5) {
-      OtpStore.clear();
-      this.errorMsg = 'Too many incorrect attempts. Please request a new OTP.';
-      return;
-    }
-
-    if (entered !== session.otp) {
-      OtpStore.update({ attempts });
-      const left = 5 - attempts;
-      this.errorMsg = `Incorrect OTP — ${left} attempt${left === 1 ? '' : 's'} remaining.`;
-      this.digits = ['', '', '', '', '', ''];
-      setTimeout(() => this.focusBox(0), 50);
-      return;
-    }
-
-    // ✓ Verified
-    OtpStore.update({ verified: true });
-    this.successMsg = '✓ OTP verified! Redirecting…';
-    setTimeout(() => {
-      this.router.navigate(['/reset-password'], { queryParams: { email: this.email } });
-    }, 900);
-  }
-
-  // ── Resend ────────────────────────────────────────────────
   async resendOtp() {
-    if (this.resendCooldown > 0 || this.loading) return;
-    this.errorMsg   = '';
-    this.successMsg = '';
-    this.loading    = true;
-
-    const newOtp  = Math.floor(100000 + Math.random() * 900000).toString();
-    const expires = Date.now() + 10 * 60 * 1000;
-
-    let emailSent = false;
-
-    if (!this.isLocalhost) {
-      // Production: try to send via Vercel serverless function
-      try {
-        await this.http.post('/api/send-otp', { email: this.email, otp: newOtp }).toPromise();
-        emailSent = true;
-      } catch (apiErr: any) {
-        const status = apiErr?.status as number | undefined;
-        if (status === 429) {
-          this.errorMsg = 'Rate limit reached. Please wait a minute before resending.';
-          this.loading  = false;
-          return;
-        }
-        if (status === 401) {
-          this.errorMsg = 'Email service authentication failed. Please contact the app owner.';
-          this.loading  = false;
-          return;
-        }
-        // Other errors (403 domain, 500, etc.) — proceed, user may still get email
-        console.warn(`[VerifyOtp] Email API error (${status}) — proceeding.`);
-      }
-    }
-
-    // Save new OTP
-    OtpStore.save({
-      otp:      newOtp,
-      email:    this.email,
-      expires,
-      attempts: 0,
-      devMode:  !emailSent,
-    });
-
-    // On localhost: show OTP on screen again
-    if (this.isLocalhost) {
-      this.devOtp = newOtp;
-    }
-
-    this.digits   = ['', '', '', '', '', ''];
-    this.expired  = false;
-    this.timeLeft = 600;
-    this.startTimer();
-
-    this.successMsg = emailSent
-      ? 'New OTP sent to your email.'
-      : this.isLocalhost
-        ? 'New OTP generated — see the code below.'
-        : 'OTP resent. Please check your inbox.';
-
-    // 60-second cooldown
-    this.resendCooldown = 60;
-    if (this.resendRef) clearInterval(this.resendRef);
-    this.resendRef = setInterval(() => {
-      this.resendCooldown = Math.max(0, this.resendCooldown - 1);
-      if (this.resendCooldown === 0) clearInterval(this.resendRef!);
-    }, 1000);
-
-    this.loading = false;
-    setTimeout(() => this.focusBox(0), 100);
+    if (this.loading || this.resendCooldown > 0 || this.verified) return;
+    this.loading = true; this.errorMsg = ''; this.successMsg = '';
+    try {
+      const result = await firstValueFrom(this.http.post<{ expires: number }>('/api/auth', { action: 'send-otp', email: this.email }));
+      this.expires = result.expires; this.cooldownUntil = Date.now() + 60000;
+      OtpStore.save({ email: this.email, expires: result.expires }); this.digits = ['', '', '', '', '', ''];
+      this.successMsg = 'If this email has an account, a new code has been sent.'; this.tick();
+    } catch (error: any) { this.errorMsg = error.error?.error || 'Could not resend the code. Please try again.'; }
+    finally { this.loading = false; }
   }
 }

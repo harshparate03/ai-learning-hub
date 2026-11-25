@@ -1,3 +1,4 @@
+import { readStoredArray } from '../../../core/utils/stored-array.util';
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -53,7 +54,7 @@ import { sanitizeUserInput } from '../../../core/utils/sanitize.util';
   standalone: true,
   imports: [CommonModule, FormsModule, RouterLink, AiSparkComponent, LogoComponent],
   templateUrl: './generate.component.html',
-  styleUrls: ['./generate.component.css']
+  styleUrls: ['./generate.component.css', './generate-responsive.component.css']
 })
 export class GenerateComponent implements OnInit {
 
@@ -87,8 +88,7 @@ export class GenerateComponent implements OnInit {
   constructor(private ai: AiService, private yt: YoutubeService, private pdf: PdfService) {}
 
   ngOnInit() {
-    const s = localStorage.getItem('mindmaps');
-    if (s) this.savedMaps = JSON.parse(s);
+    this.savedMaps = readStoredArray('mindmaps');
 
     const pending = localStorage.getItem('mindmap_load');
     if (pending) {
@@ -126,7 +126,7 @@ export class GenerateComponent implements OnInit {
         this.fileContent = await this.readPdf(file);
       } else if (ext === 'docx') {
         this.fileContent = await this.readDocx(file);
-      } else if (ext === 'pptx' || ext === 'ppt') {
+      } else if (ext === 'pptx') {
         this.fileContent = await this.readPptx(file);
       } else if (ext === 'csv') {
         this.fileContent = await this.readCsv(file);

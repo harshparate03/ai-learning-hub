@@ -16,6 +16,7 @@ export class LoginComponent {
   email    = '';
   password = '';
   errorMsg = '';
+  loading = false;
 
   /** Where to go after login — from ?redirect= query param */
   redirectUrl = '/';
@@ -39,7 +40,8 @@ export class LoginComponent {
     }
   }
 
-  login() {
+  async login() {
+    if (this.loading) return;
     this.errorMsg = '';
 
     if (!this.email || !this.password) {
@@ -47,12 +49,11 @@ export class LoginComponent {
       return;
     }
 
-    const success = this.auth.login(this.email, this.password);
-    if (success) {
-      // Navigate to the feature they originally tried to access
-      this.router.navigateByUrl(this.redirectUrl);
-    } else {
-      this.errorMsg = 'Invalid email or password.';
-    }
+    this.loading = true;
+    try {
+      await this.auth.login(this.email, this.password);
+      await this.router.navigateByUrl(this.redirectUrl);
+    } catch (error: any) { this.errorMsg = error.error?.error || 'Could not sign in. Please try again.'; }
+    finally { this.loading = false; }
   }
 }

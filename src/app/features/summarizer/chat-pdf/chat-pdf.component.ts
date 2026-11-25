@@ -1,3 +1,4 @@
+import { readStoredArray } from '../../../core/utils/stored-array.util';
 import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -415,14 +416,14 @@ Format answers with ## headings, bullet points, and \`\`\` code blocks where rel
 
   saveChat() {
     if (!this.messages.length || !this.fileName) return;
-    const history = JSON.parse(localStorage.getItem('summarizer_history') || '[]');
+    const history = readStoredArray('summarizer_history');
     const cleanMessages = this.messages
       .filter(m => !m.typing)
       .map(m => ({ role: m.role, text: m.text.replace(/<[^>]*>/g, '') }));
     history.unshift({
       type: 'qa',
       title: `Chat: ${this.fileName}`,
-      date: new Date().toLocaleDateString(),
+      date: new Date().toISOString(),
       preview: cleanMessages.find(m => m.role === 'user')?.text?.slice(0, 100) || '',
       content: cleanMessages.map(m => `${m.role === 'user' ? 'Q' : 'A'}: ${m.text}`).join('\n'),
       messages: cleanMessages

@@ -34,6 +34,11 @@
                 "glob": "pdf.worker.min.mjs",
                 "input": "node_modules/pdfjs-dist/build",
                 "output": "/"
+              },
+              {
+                "glob": "pptxgen.bundle.js",
+                "input": "node_modules/pptxgenjs/dist",
+                "output": "vendor"
               }
             ],
             "styles": [
@@ -107,6 +112,21 @@
               {
                 "glob": "**/*",
                 "input": "public"
+              },
+              {
+                "glob": "**/*",
+                "input": "src/assets",
+                "output": "assets"
+              },
+              {
+                "glob": "pdf.worker.min.mjs",
+                "input": "node_modules/pdfjs-dist/build",
+                "output": "/"
+              },
+              {
+                "glob": "pptxgen.bundle.js",
+                "input": "node_modules/pptxgenjs/dist",
+                "output": "vendor"
               }
             ],
             "styles": [

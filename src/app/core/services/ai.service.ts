@@ -1,8 +1,7 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { Observable, throwError, timer } from 'rxjs';
 import { catchError, map, switchMap, timeout } from 'rxjs/operators';
-import { environment } from '../../../environments/environment';
 import { sanitizeUserInput } from '../utils/sanitize.util';
 
 export interface GroqChatMessage {
@@ -20,25 +19,8 @@ interface GroqModel {
 @Injectable({ providedIn: 'root' })
 export class AiService {
 
-  private readonly GROQ_DIRECT_URL = 'https://api.groq.com/openai/v1/chat/completions';
-  private readonly GROQ_PROXY_URL  = '/api/groq';
-  private readonly ON_DEMAND_TOKEN_LIMIT = 28000; // safe budget per request (Groq free: 30k TPM)
-
-  // Two API keys — primary and fallback
-  private readonly API_KEYS: string[] = [
-    environment.groqApiKey || '',
-    (environment as any).groqApiKeyFallback || '',
-  ].filter(k => !!k);
-
-  private currentKeyIndex = 0;
-  private get API_KEY(): string {
-    return this.API_KEYS[this.currentKeyIndex % this.API_KEYS.length] || '';
-  }
-  private rotateKey() {
-    if (this.API_KEYS.length > 1) {
-      this.currentKeyIndex = (this.currentKeyIndex + 1) % this.API_KEYS.length;
-    }
-  }
+  private readonly GROQ_PROXY_URL = '/api/groq';
+  private readonly ON_DEMAND_TOKEN_LIMIT = 28000;
 
   // Current Groq production models — verified working July 2026
   private readonly GROQ_MODELS: GroqModel[] = [
@@ -60,62 +42,9 @@ export class AiService {
   }
 
   private groqReq(model: GroqModel, messages: GroqChatMessage[], maxOutputTokens: number): Observable<any> {
-    const body = { model: model.id, messages, temperature: 0.3, max_tokens: maxOutputTokens };
-    const key = this.API_KEY;
-
-    const directCall = (authKey: string) => {
-      const headers = new HttpHeaders({
-        'Authorization': `Bearer ${authKey}`,
-        'Content-Type': 'application/json'
-      });
-      return this.http.post(this.GROQ_DIRECT_URL, body, { headers });
-    };
-
-    if (key) {
-      return directCall(key).pipe(
-        catchError(directErr => {
-          const s = directErr?.status;
-
-          // 429: rotate key, wait 8s, retry with new key
-          if (s === 429) {
-            this.rotateKey();
-            return timer(8000).pipe(
-              switchMap(() => directCall(this.API_KEY).pipe(
-                catchError(retryErr => {
-                  if (retryErr?.status === 429) {
-                    // Still rate limited — try proxy
-                    return timer(5000).pipe(
-                      switchMap(() => this.http.post(this.GROQ_PROXY_URL, body))
-                    );
-                  }
-                  return throwError(() => retryErr);
-                })
-              ))
-            );
-          }
-
-          // 401: rotate key and retry once
-          if (s === 401 && this.API_KEYS.length > 1) {
-            this.rotateKey();
-            return directCall(this.API_KEY).pipe(
-              catchError(() => throwError(() => directErr))
-            );
-          }
-
-          // Network error (status 0) or any other — try proxy as fallback
-          if (s === 0 || s == null) {
-            return this.http.post(this.GROQ_PROXY_URL, body).pipe(
-              catchError(() => throwError(() => directErr))
-            );
-          }
-
-          return throwError(() => directErr);
-        })
-      );
-    }
-
-    // No key — use proxy directly
-    return this.http.post(this.GROQ_PROXY_URL, body);
+    return this.http.post(this.GROQ_PROXY_URL, {
+      model: model.id, messages, temperature: 0.3, max_tokens: maxOutputTokens
+    }).pipe(timeout(60000));
   }
 
   // Rough chars-to-tokens ratio (1 token ≈ 4 chars for English)
@@ -194,9 +123,8 @@ export class AiService {
           // Hard stops — bad key, don't loop further
           if (status === 401 || status === 403) return throwError(() => err);
 
-          // 429: rotate key, wait, then try next model
+          // Wait before retrying a rate-limited server request.
           if (status === 429) {
-            this.rotateKey();
             return timer(12000).pipe(switchMap(() => tryModel(idx + 1)));
           }
 

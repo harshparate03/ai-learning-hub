@@ -2,19 +2,18 @@ import { inject } from '@angular/core';
 import { CanActivateFn, Router, ActivatedRouteSnapshot, RouterStateSnapshot } from '@angular/router';
 import { AuthService } from '../services/auth.service';
 
-export const authGuard: CanActivateFn = (
+export const authGuard: CanActivateFn = async (
   _route: ActivatedRouteSnapshot,
   state: RouterStateSnapshot
 ) => {
   const auth   = inject(AuthService);
   const router = inject(Router);
 
-  if (auth.isLoggedIn()) return true;
+  if (await auth.refreshSession()) return true;
 
   // Save the URL the user tried to access so we can redirect back after login
   const redirect = state.url;
-  router.navigate(['/login'], {
+  return router.createUrlTree(['/login'], {
     queryParams: redirect && redirect !== '/' ? { redirect } : {}
   });
-  return false;
 };

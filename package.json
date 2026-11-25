@@ -11,10 +11,14 @@
     "build:dev": "ng build --configuration development",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "vercel-build": "node scripts/generate-env.js && ng build --configuration production"
+    "vercel-build": "node scripts/generate-env.js && ng build --configuration production",
+    "prebuild": "node scripts/generate-env.js",
+    "prebuild:dev": "node scripts/generate-env.js",
+    "pretest": "node scripts/generate-env.js",
+    "test:server": "node --test server/*.test.js"
   },
   "engines": {
-    "node": ">=18.19.0"
+    "node": "24.x"
   },
   "private": true,
   "dependencies": {
